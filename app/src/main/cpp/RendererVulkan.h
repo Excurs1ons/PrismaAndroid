@@ -15,6 +15,10 @@ public:
     void init() override;
     void render() override;
 
+    // SwapChain 重建相关函数（处理屏幕旋转）
+    void cleanupSwapChain();      // 清理旧的 SwapChain 相关资源
+    void recreateSwapChain();     // 重建 SwapChain 以适应新的屏幕尺寸
+
 private:
     void createScene();
     void createGraphicsPipeline();
