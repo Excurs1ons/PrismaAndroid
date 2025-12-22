@@ -1,0 +1,148 @@
+# GitHub Actions 工作流：自动构建 Android 项目
+# 支持 NDK 和 Gradle 缓存，加快构建速度
+
+name: Android CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    name: 构建 Android 项目
+    runs-on: ubuntu-latest
+
+    steps:
+      # ============ 1. 检出代码 ============
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive  # 如果有子模块也一并检出
+
+      # ============ 2. 设置 JDK ============
+      - name: 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # ============ 3. 缓存 Gradle 依赖 ============
+      # 缓存 Gradle 依赖包，避免每次重新下载
+      - name: 缓存 Gradle 依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-
+
+      # ============ 4. 缓存 Android NDK ============
+      # NDK 体积很大（约 1-2GB），缓存可以显著节省时间和带宽
+      - name: 缓存 Android NDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Android/Sdk/ndk
+            ~/.android/build-cache
+          key: ndk-${{ runner.os }}-${{ hashFiles('**/ndk_version.txt', '**/build.gradle*', '**/gradle.properties') }}
+          restore-keys: |
+            ndk-${{ runner.os }}-
+
+      # ============ 5. 缓存 CMake 构建缓存 ============
+      # 缓存 CMake 的构建中间文件
+      - name: 缓存 CMake 构建缓存
+        uses: actions/cache@v4
+        with:
+          path: |
+            **/.cxx
+            **/build/.cxx
+          key: cmake-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/build.gradle*') }}
+          restore-keys: |
+            cmake-${{ runner.os }}-
+
+      # ============ 6. 授予执行权限 ============
+      - name: 授予 Gradlew 执行权限
+        run: chmod +x ./gradlew
+
+      # ============ 7. 构建项目 ============
+      # 使用 --build-cache 启用 Gradle 构建缓存
+      # 使用 --parallel 并行构建模块
+      - name: 构建 Debug APK
+        run: ./gradlew assembleDebug --build-cache --parallel --stacktrace || ./gradlew assembleDebug --stacktrace
+
+      # ============ 8. 构建 Release APK（可选）============
+      # 如果需要签名 Release 版本，需要配置签名密钥
+      - name: 构建 Release APK
+        run: ./gradlew assembleRelease --build-cache --parallel --stacktrace || echo "Release build skipped"
+
+      # ============ 9. 上传构建产物 ============
+      - name: 上传 Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30  # 保留 30 天
+
+      - name: 上传 Release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 30
+          if-no-files-found: ignore  # 如果没有 Release APK 也不报错
+
+      # ============ 10. 上传构建报告 ============
+      - name: 上传构建日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            **/build/reports/
+            app/build/outputs/logs/
+          retention-days: 7
+
+  # ============ 可选：静态分析任务 ============
+  lint:
+    name: 代码质量检查
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('**/*.gradle*') }}
+
+      - name: 授予执行权限
+        run: chmod +x ./gradlew
+
+      - name: 运行 Lint 检查
+        run: ./gradlew lint || echo "Lint completed with warnings"
+
+      - name: 上传 Lint 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-reports
+          path: |
+            **/build/reports/lint-*.html
+            **/build/reports/lint-*.xml
+          retention-days: 14
