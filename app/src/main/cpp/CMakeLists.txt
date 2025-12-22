@@ -3,6 +3,11 @@
 
 cmake_minimum_required(VERSION 3.22.1)
 
+# 设置HTTP和HTTPS代理
+set(ENV{HTTP_PROXY} "http://127.0.0.1:7897")
+set(ENV{HTTPS_PROXY} "http://127.0.0.1:7897")
+
+# ... 你其他的CMake命令，例如 project(), add_executable() 等
 project("myapplication")
 
 include(FetchContent)
