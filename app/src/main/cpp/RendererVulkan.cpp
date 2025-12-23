@@ -448,18 +448,21 @@ void RendererVulkan::createScene() {
             "skybox_back.png"     // -Z
         };
 
-        // 尝试加载cubemap，如果文件不存在则跳过
+        // 尝试加载cubemap，如果文件不存在则使用纯色渲染
         auto cubemap = CubemapTextureAsset::loadFromAssets(assetManager, facePaths, &vulkanContext_);
+        auto skyboxGO = std::make_shared<GameObject>();
+        skyboxGO->name = "Skybox";
+        skyboxGO->position = Vector3(0, 0, 0);  // Skybox位置不重要，因为它始终围绕相机
+
         if (cubemap) {
-            auto skyboxGO = std::make_shared<GameObject>();
-            skyboxGO->name = "Skybox";
-            skyboxGO->position = Vector3(0, 0, 0);  // Skybox位置不重要，因为它始终围绕相机
             skyboxGO->addComponent(std::make_shared<SkyboxRenderer>(cubemap));
-            scene_->addGameObject(skyboxGO);
-            aout << "Skybox created successfully!" << std::endl;
+            aout << "Skybox created successfully with cubemap texture!" << std::endl;
         } else {
-            aout << "Skybox texture files not found, skipping skybox creation." << std::endl;
+            // 即使没有纹理，也添加SkyboxRenderer（会使用纯色渲染）
+            skyboxGO->addComponent(std::make_shared<SkyboxRenderer>(nullptr));
+            aout << "Skybox texture files not found, using clear color fallback." << std::endl;
         }
+        scene_->addGameObject(skyboxGO);
     }
 }
 

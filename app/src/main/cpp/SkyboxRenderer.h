@@ -27,11 +27,16 @@ public:
 
     /**
      * @brief 构造函数
-     * @param cubemap cubemap纹理资源
+     * @param cubemap cubemap纹理资源（可以为nullptr，此时使用纯色渲染）
      */
-    SkyboxRenderer(std::shared_ptr<CubemapTextureAsset> cubemap);
+    SkyboxRenderer(std::shared_ptr<CubemapTextureAsset> cubemap = nullptr);
 
     std::shared_ptr<CubemapTextureAsset> getCubemap() const { return cubemap_; }
+
+    /**
+     * @brief 检查是否有有效的cubemap纹理
+     */
+    bool hasValidTexture() const { return cubemap_ != nullptr && cubemap_->getImageView() != VK_NULL_HANDLE; }
 
     /**
      * @brief 获取skybox立方体顶点数据
