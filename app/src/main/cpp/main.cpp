@@ -24,6 +24,16 @@ void handle_cmd(android_app *pApp, int32_t cmd) {
             // android_main function and the APP_CMD_TERM_WINDOW handler case.
             pApp->userData = new Renderer(pApp);
             break;
+        case APP_CMD_WINDOW_RESIZED:
+        case APP_CMD_WINDOW_REDRAW_NEEDED:
+        case APP_CMD_CONTENT_RECT_CHANGED:
+            // 处理屏幕旋转等配置变化
+            if (pApp->userData) {
+                auto *pRenderer = reinterpret_cast<Renderer *>(pApp->userData);
+                pRenderer->onConfigChanged();
+            }
+            aout << "onConfigChanged" << std::endl;
+            break;
         case APP_CMD_TERM_WINDOW:
             // The window is being destroyed. Use this to clean up your userData to avoid leaking
             // resources.
