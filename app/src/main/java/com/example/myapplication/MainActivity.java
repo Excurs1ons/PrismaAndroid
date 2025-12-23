@@ -1,10 +1,12 @@
 package com.example.myapplication;
 
 import android.os.Build;
+import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import com.google.androidgamesdk.GameActivity;
 
 public class MainActivity extends GameActivity {
@@ -15,10 +17,29 @@ public class MainActivity extends GameActivity {
     }
 
     @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        // 配置刘海显示模式 - 允许内容延伸到刘海区域
+        configureDisplayCutout();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             hideSystemUi();
+        }
+    }
+
+    private void configureDisplayCutout() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // 设置为 shortEdges 模式，允许内容延伸到刘海区域
+            getWindow().getAttributes().layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            Log.d(TAG, "Display cutout mode set to SHORT_EDGES");
+        } else {
+            Log.d(TAG, "Display cutout mode not supported (requires Android P+)");
         }
     }
 
