@@ -3,11 +3,8 @@
 
 cmake_minimum_required(VERSION 3.22.1)
 
-# 设置HTTP和HTTPS代理
-set(ENV{HTTP_PROXY} "http://127.0.0.1:7897")
-set(ENV{HTTPS_PROXY} "http://127.0.0.1:7897")
-
-# ... 你其他的CMake命令，例如 project(), add_executable() 等
+# 本地开发时如果需要代理，请通过环境变量 HTTP_PROXY 和 HTTPS_PROXY 设置
+# 不要在 CMakeLists.txt 中硬编码代理地址，这会导致 CI 环境构建失败
 project("myapplication")
 
 include(FetchContent)
