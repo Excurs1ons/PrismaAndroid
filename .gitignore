@@ -107,6 +107,7 @@ Thumbs.db
 # Package Files
 *.jar
 *.war
+!gradle/wrapper/gradle-wrapper.jar  # 例外：Gradle wrapper JAR 必须提交
 *.nar
 *.ear
 *.zip
