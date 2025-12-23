@@ -166,6 +166,7 @@ void RendererVulkan::init() {
     VkSurfaceFormatKHR surfaceFormat = {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     vulkanContext_.swapChainImageFormat = surfaceFormat.format;
     vulkanContext_.swapChainExtent = capabilities.currentExtent;
+    vulkanContext_.currentTransform = capabilities.currentTransform;
 
     VkSwapchainCreateInfoKHR swapChainCreateInfo{};
     swapChainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -339,7 +340,7 @@ void RendererVulkan::createScene() {
         
         auto texture = TextureAsset::loadAsset(assetManager, "android_robot.png", &vulkanContext_);
 
-        Vector3 red(1.0f, 0.0f, 0.0f);
+        Vector3 red(1.0f, 1.0f, 1.0f);
         std::vector<Vertex> vertices = {
             // Front
             Vertex(Vector3(-0.5f, -0.5f,  0.5f), red, Vector2(0.0f, 0.0f)),
@@ -767,8 +768,31 @@ void RendererVulkan::updateUniformBuffer(uint32_t currentImage) {
 
         // 3. Projection 矩阵：透视投影
         //    glm::perspective(FOV, 宽高比, 近平面距离, 远平面距离)
-        //    关键：宽高比每帧从 swapChainExtent 获取，确保屏幕旋转时自动更新
-        float aspectRatio = vulkanContext_.swapChainExtent.width / (float) vulkanContext_.swapChainExtent.height;
+        //
+        //    重要：在横屏模式下，当 currentTransform 包含 ROTATE_90 或 ROTATE_270 时，
+        //    swapChainExtent 的宽高是交换的（例如 1080x1920 而不是 1920x1080），
+        //    因为 SwapChain 图像是垂直存储的，然后通过 preTransform 旋转显示。
+        //    因此我们需要根据 transform 决定是否交换宽高比。
+        float aspectRatio;
+        if (vulkanContext_.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+            vulkanContext_.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+            // 90度或270度旋转：SwapChain 图像的宽高与显示方向相反，需要交换
+            aspectRatio = vulkanContext_.swapChainExtent.height / (float) vulkanContext_.swapChainExtent.width;
+        } else {
+            // 无旋转或180度旋转：直接使用 SwapChain 的宽高比
+            aspectRatio = vulkanContext_.swapChainExtent.width / (float) vulkanContext_.swapChainExtent.height;
+        }
+
+        // 调试输出（仅第一帧）
+        static bool debugPrinted = false;
+        if (!debugPrinted && i == 0) {
+            aout << "Projection Debug: swapChainExtent=" << vulkanContext_.swapChainExtent.width
+                 << "x" << vulkanContext_.swapChainExtent.height
+                 << ", transform=" << vulkanContext_.currentTransform
+                 << ", aspectRatio=" << aspectRatio << std::endl;
+            debugPrinted = true;
+        }
+
         ubo.proj = glm::perspective(
             glm::radians(45.0f),   // 45 度视野角
             aspectRatio,            // 动态宽高比（横屏时 >1，竖屏时 <1）
@@ -803,6 +827,21 @@ void RendererVulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+    // 【新增】动态设置 Viewport 和 Scissor
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float)vulkanContext_.swapChainExtent.width;
+    viewport.height = (float)vulkanContext_.swapChainExtent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = vulkanContext_.swapChainExtent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     auto& gameObjects = scene_->getGameObjects();
     for (size_t i = 0; i < gameObjects.size(); i++) {
@@ -991,8 +1030,32 @@ void RendererVulkan::recreateSwapChain() {
         vulkanContext_.surface,
         &capabilities);
 
+
+    int32_t windowWidth = ANativeWindow_getWidth(app_->window);
+    int32_t windowHeight = ANativeWindow_getHeight(app_->window);
+
+    // 如果 Vulkan 返回的分辨率和 Window 的分辨率不一致，说明 Surface 还没准备好
+    // 我们强制使用 Window 的分辨率（前提是 capabilities 允许）
+    if (capabilities.currentExtent.width != windowWidth || capabilities.currentExtent.height != windowHeight) {
+        // 更新 capabilities，或者稍作等待
+        // 在这里我们手动修正 extent 为窗口的实际大小
+        capabilities.currentExtent.width = windowWidth;
+        capabilities.currentExtent.height = windowHeight;
+        aout << "Applying Width - Height Correction: " << windowWidth << "x" << windowHeight << std::endl;
+    }
+
     // 更新 SwapChain 尺寸为当前最新的屏幕尺寸
     vulkanContext_.swapChainExtent = capabilities.currentExtent;
+    vulkanContext_.currentTransform = capabilities.currentTransform;
+
+    // 处理最小化的情况
+    if (capabilities.currentExtent.width == 0 || capabilities.currentExtent.height == 0) {
+        return;
+    }
+    // ===================================
+
+    // 保存旧的 SwapChain 句柄，用于创建新链时的 oldSwapchain 参数，以及后续销毁
+    VkSwapchainKHR oldSwapChain = vulkanContext_.swapChain;
 
     // 获取 Surface 格式
     VkSurfaceFormatKHR surfaceFormat = {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
@@ -1042,7 +1105,7 @@ void RendererVulkan::recreateSwapChain() {
     swapChainCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     swapChainCreateInfo.clipped = VK_TRUE;
     // 设置旧 SwapChain 以实现平滑过渡（Vulkan 会在获取新图像后才销毁旧 SwapChain）
-    swapChainCreateInfo.oldSwapchain = vulkanContext_.swapChain;
+    swapChainCreateInfo.oldSwapchain = oldSwapChain;
 
     // 创建新 SwapChain
     VkResult result = vkCreateSwapchainKHR(
@@ -1055,7 +1118,10 @@ void RendererVulkan::recreateSwapChain() {
         aout << "Failed to recreate swapchain: " << result << std::endl;
         return;
     }
-
+    // 【重要】创建完新链后，必须销毁旧链
+    if (oldSwapChain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(vulkanContext_.device, oldSwapChain, nullptr);
+    }
     // 获取新 SwapChain 的图像
     uint32_t imageCount;
     vkGetSwapchainImagesKHR(vulkanContext_.device, vulkanContext_.swapChain, &imageCount, nullptr);
@@ -1205,13 +1271,29 @@ void RendererVulkan::recreateSwapChain() {
     VkRect2D scissor{};
     scissor.offset = {0, 0};
     scissor.extent = vulkanContext_.swapChainExtent;
+    /* Viewport 设置 */
+//    VkPipelineViewportStateCreateInfo viewportState{};
+//    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+//    viewportState.viewportCount = 1;
+//    viewportState.pViewports = &viewport;
+//    viewportState.scissorCount = 1;
+//    viewportState.pScissors = &scissor;
 
+    // 移除原来的 Viewport 设置，改为只指定数量
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
     viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+
+    // 添加 Dynamic State 定义
+    std::vector<VkDynamicState> dynamicStates = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
 
     // 光栅化状态
     VkPipelineRasterizationStateCreateInfo rasterizer{};
@@ -1269,6 +1351,8 @@ void RendererVulkan::recreateSwapChain() {
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = vulkanContext_.renderPass;
     pipelineInfo.subpass = 0;
+
+    pipelineInfo.pDynamicState = &dynamicState;
 
     vkCreateGraphicsPipelines(vulkanContext_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline);
 

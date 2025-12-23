@@ -39,6 +39,7 @@ public:
     std::vector<VkImage> swapChainImages;
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
+    VkSurfaceTransformFlagBitsKHR currentTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     std::vector<VkImageView> swapChainImageViews;
     std::vector<VkFramebuffer> swapChainFramebuffers;
     
