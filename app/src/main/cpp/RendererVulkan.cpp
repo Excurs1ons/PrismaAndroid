@@ -49,6 +49,10 @@ RendererVulkan::~RendererVulkan() {
     }
 
     // 清理Skybox资源
+    for (size_t i = 0; i < skyboxData_.uniformBuffers.size(); i++) {
+        vkDestroyBuffer(vulkanContext_.device, skyboxData_.uniformBuffers[i], nullptr);
+        vkFreeMemory(vulkanContext_.device, skyboxData_.uniformBuffersMemory[i], nullptr);
+    }
     if (skyboxData_.pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(vulkanContext_.device, skyboxData_.pipeline, nullptr);
     }
@@ -1014,6 +1018,14 @@ void RendererVulkan::createClearColorPipeline() {
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+    // ClearColor也禁用深度测试
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
@@ -1040,6 +1052,7 @@ void RendererVulkan::createClearColorPipeline() {
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.layout = clearColorData_.pipelineLayout;
     pipelineInfo.renderPass = vulkanContext_.renderPass;
@@ -1200,6 +1213,14 @@ void RendererVulkan::createSkyboxPipeline() {
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+    // Skybox需要禁用深度测试，始终在背景渲染
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
@@ -1247,6 +1268,7 @@ void RendererVulkan::createSkyboxPipeline() {
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.layout = skyboxData_.pipelineLayout;
     pipelineInfo.renderPass = vulkanContext_.renderPass;
@@ -1272,15 +1294,15 @@ void RendererVulkan::createSkyboxDescriptorSets() {
         return;
     }
 
-    // 为skybox创建uniform buffers
+    // 为skybox创建uniform buffers（存储到成员变量中）
     VkDeviceSize bufferSize = sizeof(SkyboxUniformBufferObject);
-    std::vector<VkBuffer> skyboxUniformBuffers(MAX_FRAMES_IN_FLIGHT);
-    std::vector<VkDeviceMemory> skyboxUniformBuffersMemory(MAX_FRAMES_IN_FLIGHT);
-    std::vector<void*> skyboxUniformBuffersMapped(MAX_FRAMES_IN_FLIGHT);
+    skyboxData_.uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    skyboxData_.uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    skyboxData_.uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, skyboxUniformBuffers[i], skyboxUniformBuffersMemory[i]);
-        vkMapMemory(vulkanContext_.device, skyboxUniformBuffersMemory[i], 0, bufferSize, 0, &skyboxUniformBuffersMapped[i]);
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, skyboxData_.uniformBuffers[i], skyboxData_.uniformBuffersMemory[i]);
+        vkMapMemory(vulkanContext_.device, skyboxData_.uniformBuffersMemory[i], 0, bufferSize, 0, &skyboxData_.uniformBuffersMapped[i]);
     }
 
     // 分配描述符集
@@ -1299,7 +1321,7 @@ void RendererVulkan::createSkyboxDescriptorSets() {
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = skyboxUniformBuffers[i];
+        bufferInfo.buffer = skyboxData_.uniformBuffers[i];
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(SkyboxUniformBufferObject);
 
@@ -1406,6 +1428,15 @@ void RendererVulkan::updateUniformBuffer(uint32_t currentImage) {
         ubo.proj = proj;
 
         memcpy(renderObjects[j].uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    }
+
+    // 更新Skybox的UBO（如果存在且有纹理）
+    if (skyboxIndex != SIZE_MAX && skyboxData_.hasTexture && !skyboxData_.uniformBuffersMapped.empty()) {
+        SkyboxUniformBufferObject skyboxUbo{};
+        skyboxUbo.view = view;
+        skyboxUbo.proj = proj;
+
+        memcpy(skyboxData_.uniformBuffersMapped[currentImage], &skyboxUbo, sizeof(skyboxUbo));
     }
 }
 void RendererVulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
