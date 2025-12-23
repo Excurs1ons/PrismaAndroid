@@ -16,7 +16,7 @@ public:
             const std::string& assetPath,
             VulkanContext* vulkanContext = nullptr);
 
-    ~TextureAsset();
+    virtual ~TextureAsset();
 
     // 获取 Vulkan 资源句柄
     VkImageView getImageView() const { return imageView_; }
@@ -29,7 +29,9 @@ public:
     // 获取 OpenGL 资源句柄
     GLuint getTextureID() const { return textureID_; }
 
-private:
+    void Unload();
+protected:
+
     TextureAsset(VulkanContext* context);
 
     VulkanContext* context_;

@@ -234,6 +234,10 @@ std::shared_ptr<TextureAsset> TextureAsset::loadAsset(
 TextureAsset::TextureAsset(VulkanContext* context) : context_(context) {}
 
 TextureAsset::~TextureAsset() {
+    Unload();
+}
+
+void TextureAsset::Unload() {
     if (context_) {
         vkDestroySampler(context_->device, sampler_, nullptr);
         vkDestroyImageView(context_->device, imageView_, nullptr);

@@ -22,6 +22,8 @@ public:
 private:
     void createScene();
     void createGraphicsPipeline();
+    void createSkyboxPipeline();  // 创建Skybox渲染管线
+    void createClearColorPipeline();  // 创建纯色渲染管线（skybox纹理为空时使用）
     void createFramebuffers();
     void createCommandPool();
     void createTextureImage();
@@ -32,6 +34,7 @@ private:
     void createUniformBuffers();
     void createDescriptorPool();
     void createDescriptorSets();
+    void createSkyboxDescriptorSets();  // 创建Skybox描述符集
     void createCommandBuffers();
     void createSyncObjects();
     
@@ -58,6 +61,27 @@ private:
     };
 
     std::vector<RenderObjectData> renderObjects;
+
+    // Skybox渲染数据
+    struct SkyboxRenderData {
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
+        VkBuffer indexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
+        std::vector<VkDescriptorSet> descriptorSets;
+        bool hasTexture = false;  // 是否有有效的cubemap纹理
+    } skyboxData_;
+
+    // 纯色渲染数据（skybox纹理为空时使用）
+    struct ClearColorData {
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+        VkBuffer vertexBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
+    } clearColorData_;
 
     // Vulkan resources for the scene
     VkDescriptorSetLayout descriptorSetLayout;

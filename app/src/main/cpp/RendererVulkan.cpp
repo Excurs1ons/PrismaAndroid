@@ -2,6 +2,8 @@
 #include "AndroidOut.h"
 #include "Scene.h"
 #include "MeshRenderer.h"
+#include "SkyboxRenderer.h"
+#include "CubemapTextureAsset.h"
 #include "ShaderVulkan.h"
 #include "TextureAsset.h"
 #include <game-activity/native_app_glue/android_native_app_glue.h>
@@ -19,6 +21,12 @@ struct UniformBufferObject {
     alignas(16) Matrix4 proj;
 };
 
+// Skybox专用的UBO（不需要model矩阵）
+struct SkyboxUniformBufferObject {
+    alignas(16) Matrix4 view;
+    alignas(16) Matrix4 proj;
+};
+
 RendererVulkan::RendererVulkan(android_app *pApp) : app_(pApp) {
     init();
 }
@@ -27,6 +35,37 @@ RendererVulkan::~RendererVulkan() {
     vkDeviceWaitIdle(vulkanContext_.device);
 
     scene_.reset();
+
+    // 清理ClearColor资源
+    if (clearColorData_.pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(vulkanContext_.device, clearColorData_.pipeline, nullptr);
+    }
+    if (clearColorData_.pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(vulkanContext_.device, clearColorData_.pipelineLayout, nullptr);
+    }
+    if (clearColorData_.vertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(vulkanContext_.device, clearColorData_.vertexBuffer, nullptr);
+        vkFreeMemory(vulkanContext_.device, clearColorData_.vertexBufferMemory, nullptr);
+    }
+
+    // 清理Skybox资源
+    if (skyboxData_.pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(vulkanContext_.device, skyboxData_.pipeline, nullptr);
+    }
+    if (skyboxData_.pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(vulkanContext_.device, skyboxData_.pipelineLayout, nullptr);
+    }
+    if (skyboxData_.descriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(vulkanContext_.device, skyboxData_.descriptorSetLayout, nullptr);
+    }
+    if (skyboxData_.vertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(vulkanContext_.device, skyboxData_.vertexBuffer, nullptr);
+        vkFreeMemory(vulkanContext_.device, skyboxData_.vertexBufferMemory, nullptr);
+    }
+    if (skyboxData_.indexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(vulkanContext_.device, skyboxData_.indexBuffer, nullptr);
+        vkFreeMemory(vulkanContext_.device, skyboxData_.indexBufferMemory, nullptr);
+    }
 
     // vkDestroyImageView(vulkanContext_.device, textureImageView, nullptr);
     // vkDestroyImage(vulkanContext_.device, textureImage, nullptr);
@@ -294,6 +333,8 @@ void RendererVulkan::init() {
 
     createScene();
     createGraphicsPipeline();
+    createClearColorPipeline();  // 创建纯色渲染管线
+    createSkyboxPipeline();  // 创建Skybox渲染管线
     // createTextureImage(); // Handled by TextureAsset
     // createTextureImageView(); // Handled by TextureAsset
     // createTextureSampler(); // Handled by TextureAsset
@@ -302,6 +343,7 @@ void RendererVulkan::init() {
     createUniformBuffers();
     createDescriptorPool();
     createDescriptorSets();
+    createSkyboxDescriptorSets();  // 创建Skybox描述符集
     createCommandBuffers();
 
     aout << "Vulkan Initialized Successfully" << std::endl;
@@ -386,6 +428,34 @@ void RendererVulkan::createScene() {
         auto model = std::make_shared<Model>(vertices, indices, texture);
         go->addComponent(std::make_shared<MeshRenderer>(model));
         scene_->addGameObject(go);
+    }
+
+    // 3. Skybox
+    {
+        // 注意：Skybox的纹理路径需要6个面的纹理
+        // 顺序：+X, -X, +Y, -Y, +Z, -Z
+        // 这里使用占位符，实际使用时需要替换为真实的cubemap纹理文件
+        std::vector<std::string> facePaths = {
+            "skybox_right.png",   // +X
+            "skybox_left.png",    // -X
+            "skybox_top.png",     // +Y
+            "skybox_bottom.png",  // -Y
+            "skybox_front.png",   // +Z
+            "skybox_back.png"     // -Z
+        };
+
+        // 尝试加载cubemap，如果文件不存在则跳过
+        auto cubemap = CubemapTextureAsset::loadFromAssets(assetManager, facePaths, &vulkanContext_);
+        if (cubemap) {
+            auto skyboxGO = std::make_shared<GameObject>();
+            skyboxGO->name = "Skybox";
+            skyboxGO->position = Vector3(0, 0, 0);  // Skybox位置不重要，因为它始终围绕相机
+            skyboxGO->addComponent(std::make_shared<SkyboxRenderer>(cubemap));
+            scene_->addGameObject(skyboxGO);
+            aout << "Skybox created successfully!" << std::endl;
+        } else {
+            aout << "Skybox texture files not found, skipping skybox creation." << std::endl;
+        }
     }
 }
 
@@ -572,9 +642,24 @@ void RendererVulkan::createTextureSampler() {
 
 void RendererVulkan::createVertexBuffer() {
     auto& gameObjects = scene_->getGameObjects();
-    renderObjects.resize(gameObjects.size());
+
+    // 分离MeshRenderer和SkyboxRenderer对象
+    std::vector<size_t> meshRendererIndices;
+    size_t skyboxIndex = SIZE_MAX;
 
     for (size_t i = 0; i < gameObjects.size(); i++) {
+        auto go = gameObjects[i];
+        if (go->getComponent<MeshRenderer>()) {
+            meshRendererIndices.push_back(i);
+        } else if (go->getComponent<SkyboxRenderer>()) {
+            skyboxIndex = i;
+        }
+    }
+
+    // 创建MeshRenderer的顶点缓冲区
+    renderObjects.resize(meshRendererIndices.size());
+    for (size_t j = 0; j < meshRendererIndices.size(); j++) {
+        size_t i = meshRendererIndices[j];
         auto go = gameObjects[i];
         auto meshRenderer = go->getComponent<MeshRenderer>();
         auto model = meshRenderer->getModel();
@@ -589,19 +674,58 @@ void RendererVulkan::createVertexBuffer() {
         memcpy(data, model->getVertexData(), (size_t) bufferSize);
         vkUnmapMemory(vulkanContext_.device, stagingBufferMemory);
 
-        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, renderObjects[i].vertexBuffer, renderObjects[i].vertexBufferMemory);
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, renderObjects[j].vertexBuffer, renderObjects[j].vertexBufferMemory);
 
-        vulkanContext_.copyBuffer(stagingBuffer, renderObjects[i].vertexBuffer, bufferSize);
+        vulkanContext_.copyBuffer(stagingBuffer, renderObjects[j].vertexBuffer, bufferSize);
 
         vkDestroyBuffer(vulkanContext_.device, stagingBuffer, nullptr);
         vkFreeMemory(vulkanContext_.device, stagingBufferMemory, nullptr);
+    }
+
+    // 创建Skybox的顶点缓冲区
+    if (skyboxIndex != SIZE_MAX) {
+        const auto& vertices = SkyboxRenderer::getSkyboxVertices();
+        VkDeviceSize bufferSize = sizeof(SkyboxRenderer::SkyboxVertex) * vertices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(vulkanContext_.device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), (size_t) bufferSize);
+        vkUnmapMemory(vulkanContext_.device, stagingBufferMemory);
+
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, skyboxData_.vertexBuffer, skyboxData_.vertexBufferMemory);
+
+        vulkanContext_.copyBuffer(stagingBuffer, skyboxData_.vertexBuffer, bufferSize);
+
+        vkDestroyBuffer(vulkanContext_.device, stagingBuffer, nullptr);
+        vkFreeMemory(vulkanContext_.device, stagingBufferMemory, nullptr);
+
+        aout << "Skybox vertex buffer created." << std::endl;
     }
 }
 
 void RendererVulkan::createIndexBuffer() {
     auto& gameObjects = scene_->getGameObjects();
-    
+
+    // 分离MeshRenderer和SkyboxRenderer对象
+    std::vector<size_t> meshRendererIndices;
+    size_t skyboxIndex = SIZE_MAX;
+
     for (size_t i = 0; i < gameObjects.size(); i++) {
+        auto go = gameObjects[i];
+        if (go->getComponent<MeshRenderer>()) {
+            meshRendererIndices.push_back(i);
+        } else if (go->getComponent<SkyboxRenderer>()) {
+            skyboxIndex = i;
+        }
+    }
+
+    // 创建MeshRenderer的索引缓冲区
+    for (size_t j = 0; j < meshRendererIndices.size(); j++) {
+        size_t i = meshRendererIndices[j];
         auto go = gameObjects[i];
         auto meshRenderer = go->getComponent<MeshRenderer>();
         auto model = meshRenderer->getModel();
@@ -616,54 +740,124 @@ void RendererVulkan::createIndexBuffer() {
         memcpy(data, model->getIndexData(), (size_t) bufferSize);
         vkUnmapMemory(vulkanContext_.device, stagingBufferMemory);
 
-        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, renderObjects[i].indexBuffer, renderObjects[i].indexBufferMemory);
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, renderObjects[j].indexBuffer, renderObjects[j].indexBufferMemory);
 
-        vulkanContext_.copyBuffer(stagingBuffer, renderObjects[i].indexBuffer, bufferSize);
+        vulkanContext_.copyBuffer(stagingBuffer, renderObjects[j].indexBuffer, bufferSize);
 
         vkDestroyBuffer(vulkanContext_.device, stagingBuffer, nullptr);
         vkFreeMemory(vulkanContext_.device, stagingBufferMemory, nullptr);
+    }
+
+    // 创建Skybox的索引缓冲区
+    if (skyboxIndex != SIZE_MAX) {
+        const auto& indices = SkyboxRenderer::getSkyboxIndices();
+        VkDeviceSize bufferSize = sizeof(uint16_t) * indices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(vulkanContext_.device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, indices.data(), (size_t) bufferSize);
+        vkUnmapMemory(vulkanContext_.device, stagingBufferMemory);
+
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, skyboxData_.indexBuffer, skyboxData_.indexBufferMemory);
+
+        vulkanContext_.copyBuffer(stagingBuffer, skyboxData_.indexBuffer, bufferSize);
+
+        vkDestroyBuffer(vulkanContext_.device, stagingBuffer, nullptr);
+        vkFreeMemory(vulkanContext_.device, stagingBufferMemory, nullptr);
+
+        aout << "Skybox index buffer created." << std::endl;
     }
 }
 
 void RendererVulkan::createUniformBuffers() {
     VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    VkDeviceSize skyboxBufferSize = sizeof(SkyboxUniformBufferObject);
     auto& gameObjects = scene_->getGameObjects();
 
-    for (size_t i = 0; i < gameObjects.size(); i++) {
-        renderObjects[i].uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-        renderObjects[i].uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
-        renderObjects[i].uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+    // 分离MeshRenderer和SkyboxRenderer对象
+    std::vector<size_t> meshRendererIndices;
+    size_t skyboxIndex = SIZE_MAX;
 
-        for (size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; j++) {
-            vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, renderObjects[i].uniformBuffers[j], renderObjects[i].uniformBuffersMemory[j]);
-            vkMapMemory(vulkanContext_.device, renderObjects[i].uniformBuffersMemory[j], 0, bufferSize, 0, &renderObjects[i].uniformBuffersMapped[j]);
+    for (size_t i = 0; i < gameObjects.size(); i++) {
+        auto go = gameObjects[i];
+        if (go->getComponent<MeshRenderer>()) {
+            meshRendererIndices.push_back(i);
+        } else if (go->getComponent<SkyboxRenderer>()) {
+            skyboxIndex = i;
         }
     }
+
+    // 为MeshRenderer创建uniform buffers
+    for (size_t j = 0; j < meshRendererIndices.size(); j++) {
+        renderObjects[j].uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        renderObjects[j].uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+        renderObjects[j].uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+        for (size_t k = 0; k < MAX_FRAMES_IN_FLIGHT; k++) {
+            vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, renderObjects[j].uniformBuffers[k], renderObjects[j].uniformBuffersMemory[k]);
+            vkMapMemory(vulkanContext_.device, renderObjects[j].uniformBuffersMemory[k], 0, bufferSize, 0, &renderObjects[j].uniformBuffersMapped[k]);
+        }
+    }
+
+    // 为Skybox创建uniform buffers (单独存储，稍后使用)
+    // Skybox不使用renderObjects数组，而是使用单独的skyboxData_
 }
 
 void RendererVulkan::createDescriptorPool() {
     auto& gameObjects = scene_->getGameObjects();
-    uint32_t count = static_cast<uint32_t>(gameObjects.size() * MAX_FRAMES_IN_FLIGHT);
+
+    // 计算需要多少个描述符
+    uint32_t meshRendererCount = 0;
+    uint32_t skyboxCount = 0;
+
+    for (auto& go : gameObjects) {
+        if (go->getComponent<MeshRenderer>()) {
+            meshRendererCount++;
+        } else if (go->getComponent<SkyboxRenderer>()) {
+            skyboxCount++;
+        }
+    }
+
+    uint32_t totalSets = (meshRendererCount + skyboxCount) * MAX_FRAMES_IN_FLIGHT;
 
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = count;
+    poolSizes[0].descriptorCount = totalSets;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = count;
+    poolSizes[1].descriptorCount = totalSets;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = count;
+    poolInfo.maxSets = totalSets;
 
     vkCreateDescriptorPool(vulkanContext_.device, &poolInfo, nullptr, &descriptorPool);
 }
 
 void RendererVulkan::createDescriptorSets() {
     auto& gameObjects = scene_->getGameObjects();
-    
+
+    // 分离MeshRenderer和SkyboxRenderer对象
+    std::vector<size_t> meshRendererIndices;
+    size_t skyboxIndex = SIZE_MAX;
+
     for (size_t i = 0; i < gameObjects.size(); i++) {
+        auto go = gameObjects[i];
+        if (go->getComponent<MeshRenderer>()) {
+            meshRendererIndices.push_back(i);
+        } else if (go->getComponent<SkyboxRenderer>()) {
+            skyboxIndex = i;
+        }
+    }
+
+    // 为MeshRenderer创建描述符集
+    for (size_t j = 0; j < meshRendererIndices.size(); j++) {
+        size_t i = meshRendererIndices[j];
         std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -671,12 +865,12 @@ void RendererVulkan::createDescriptorSets() {
         allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
         allocInfo.pSetLayouts = layouts.data();
 
-        renderObjects[i].descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
-        vkAllocateDescriptorSets(vulkanContext_.device, &allocInfo, renderObjects[i].descriptorSets.data());
+        renderObjects[j].descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+        vkAllocateDescriptorSets(vulkanContext_.device, &allocInfo, renderObjects[j].descriptorSets.data());
 
-        for (size_t j = 0; j < MAX_FRAMES_IN_FLIGHT; j++) {
+        for (size_t k = 0; k < MAX_FRAMES_IN_FLIGHT; k++) {
             VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = renderObjects[i].uniformBuffers[j];
+            bufferInfo.buffer = renderObjects[j].uniformBuffers[k];
             bufferInfo.offset = 0;
             bufferInfo.range = sizeof(UniformBufferObject);
 
@@ -692,7 +886,7 @@ void RendererVulkan::createDescriptorSets() {
             std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
             descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[0].dstSet = renderObjects[i].descriptorSets[j];
+            descriptorWrites[0].dstSet = renderObjects[j].descriptorSets[k];
             descriptorWrites[0].dstBinding = 0;
             descriptorWrites[0].dstArrayElement = 0;
             descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -700,7 +894,7 @@ void RendererVulkan::createDescriptorSets() {
             descriptorWrites[0].pBufferInfo = &bufferInfo;
 
             descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[1].dstSet = renderObjects[i].descriptorSets[j];
+            descriptorWrites[1].dstSet = renderObjects[j].descriptorSets[k];
             descriptorWrites[1].dstBinding = 1;
             descriptorWrites[1].dstArrayElement = 0;
             descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -723,6 +917,421 @@ void RendererVulkan::createCommandBuffers() {
     vkAllocateCommandBuffers(vulkanContext_.device, &allocInfo, vulkanContext_.commandBuffers.data());
 }
 
+void RendererVulkan::createClearColorPipeline() {
+    // 加载着色器
+    auto vertShaderCode = ShaderVulkan::loadShader(app_->activity->assetManager, "shaders/clearcolor.vert.spv");
+    auto fragShaderCode = ShaderVulkan::loadShader(app_->activity->assetManager, "shaders/clearcolor.frag.spv");
+
+    if (vertShaderCode.empty() || fragShaderCode.empty()) {
+        aout << "Failed to load clearcolor shader files!" << std::endl;
+        return;
+    }
+
+    VkShaderModule vertShaderModule;
+    VkShaderModuleCreateInfo vertCreateInfo{};
+    vertCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    vertCreateInfo.codeSize = vertShaderCode.size() * 4;
+    vertCreateInfo.pCode = vertShaderCode.data();
+    vkCreateShaderModule(vulkanContext_.device, &vertCreateInfo, nullptr, &vertShaderModule);
+
+    VkShaderModule fragShaderModule;
+    VkShaderModuleCreateInfo fragCreateInfo{};
+    fragCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    fragCreateInfo.codeSize = fragShaderCode.size() * 4;
+    fragCreateInfo.pCode = fragShaderCode.data();
+    vkCreateShaderModule(vulkanContext_.device, &fragCreateInfo, nullptr, &fragShaderModule);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+    // 顶点格式：只有2D位置
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkVertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(glm::vec2);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attributeDescription{};
+    attributeDescription.binding = 0;
+    attributeDescription.location = 0;
+    attributeDescription.format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescription.offset = 0;
+
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;
+    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescription;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float) vulkanContext_.swapChainExtent.width;
+    viewport.height = (float) vulkanContext_.swapChainExtent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = vulkanContext_.swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    // 不需要描述符集
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 0;
+
+    vkCreatePipelineLayout(vulkanContext_.device, &pipelineLayoutInfo, nullptr, &clearColorData_.pipelineLayout);
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.layout = clearColorData_.pipelineLayout;
+    pipelineInfo.renderPass = vulkanContext_.renderPass;
+    pipelineInfo.subpass = 0;
+
+    vkCreateGraphicsPipelines(vulkanContext_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &clearColorData_.pipeline);
+
+    vkDestroyShaderModule(vulkanContext_.device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(vulkanContext_.device, vertShaderModule, nullptr);
+
+    // 创建全屏四边形的顶点缓冲区 (两个三角形组成)
+    glm::vec2 vertices[] = {
+        {-1.0f, -1.0f},  // 左下
+        { 1.0f, -1.0f},  // 右下
+        {-1.0f,  1.0f},  // 左上
+        { 1.0f,  1.0f}   // 右上
+    };
+
+    VkDeviceSize bufferSize = sizeof(vertices);
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+    void* data;
+    vkMapMemory(vulkanContext_.device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, vertices, (size_t) bufferSize);
+    vkUnmapMemory(vulkanContext_.device, stagingBufferMemory);
+
+    vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, clearColorData_.vertexBuffer, clearColorData_.vertexBufferMemory);
+
+    vulkanContext_.copyBuffer(stagingBuffer, clearColorData_.vertexBuffer, bufferSize);
+
+    vkDestroyBuffer(vulkanContext_.device, stagingBuffer, nullptr);
+    vkFreeMemory(vulkanContext_.device, stagingBufferMemory, nullptr);
+
+    aout << "ClearColor pipeline created successfully." << std::endl;
+}
+
+void RendererVulkan::createSkyboxPipeline() {
+    // 检查是否有skybox
+    auto& gameObjects = scene_->getGameObjects();
+    std::shared_ptr<SkyboxRenderer> skyboxRenderer;
+    for (auto& go : gameObjects) {
+        skyboxRenderer = go->getComponent<SkyboxRenderer>();
+        if (skyboxRenderer) break;
+    }
+
+    // 检查是否有有效的cubemap纹理
+    skyboxData_.hasTexture = false;
+    if (skyboxRenderer && skyboxRenderer->getCubemap() && skyboxRenderer->getCubemap()->getImageView() != VK_NULL_HANDLE) {
+        skyboxData_.hasTexture = true;
+    }
+
+    if (!skyboxRenderer) {
+        aout << "No skybox found, skipping skybox pipeline creation." << std::endl;
+        return;
+    }
+
+    if (!skyboxData_.hasTexture) {
+        aout << "Skybox has no valid texture, will use clear color instead." << std::endl;
+        // 不创建skybox pipeline，后续会使用clear color
+        return;
+    }
+
+    auto vertShaderCode = ShaderVulkan::loadShader(app_->activity->assetManager, "shaders/skybox.vert.spv");
+    auto fragShaderCode = ShaderVulkan::loadShader(app_->activity->assetManager, "shaders/skybox.frag.spv");
+
+    if (vertShaderCode.empty() || fragShaderCode.empty()) {
+        aout << "Failed to load skybox shader files!" << std::endl;
+        skyboxData_.hasTexture = false;
+        return;
+    }
+
+    VkShaderModule vertShaderModule;
+    VkShaderModuleCreateInfo vertCreateInfo{};
+    vertCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    vertCreateInfo.codeSize = vertShaderCode.size() * 4;
+    vertCreateInfo.pCode = vertShaderCode.data();
+    vkCreateShaderModule(vulkanContext_.device, &vertCreateInfo, nullptr, &vertShaderModule);
+
+    VkShaderModule fragShaderModule;
+    VkShaderModuleCreateInfo fragCreateInfo{};
+    fragCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    fragCreateInfo.codeSize = fragShaderCode.size() * 4;
+    fragCreateInfo.pCode = fragShaderCode.data();
+    vkCreateShaderModule(vulkanContext_.device, &fragCreateInfo, nullptr, &fragShaderModule);
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+    // Skybox顶点格式：只有位置
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkVertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(SkyboxRenderer::SkyboxVertex);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attributeDescription{};
+    attributeDescription.binding = 0;
+    attributeDescription.location = 0;
+    attributeDescription.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescription.offset = offsetof(SkyboxRenderer::SkyboxVertex, position);
+
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;
+    vertexInputInfo.pVertexAttributeDescriptions = &attributeDescription;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = (float) vulkanContext_.swapChainExtent.width;
+    viewport.height = (float) vulkanContext_.swapChainExtent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = vulkanContext_.swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;  // Skybox渲染立方体内部
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    // Skybox描述符集布局：view/proj矩阵 + cubemap
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    vkCreateDescriptorSetLayout(vulkanContext_.device, &layoutInfo, nullptr, &skyboxData_.descriptorSetLayout);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &skyboxData_.descriptorSetLayout;
+
+    vkCreatePipelineLayout(vulkanContext_.device, &pipelineLayoutInfo, nullptr, &skyboxData_.pipelineLayout);
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.layout = skyboxData_.pipelineLayout;
+    pipelineInfo.renderPass = vulkanContext_.renderPass;
+    pipelineInfo.subpass = 0;
+
+    vkCreateGraphicsPipelines(vulkanContext_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &skyboxData_.pipeline);
+
+    vkDestroyShaderModule(vulkanContext_.device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(vulkanContext_.device, vertShaderModule, nullptr);
+
+    aout << "Skybox pipeline created successfully." << std::endl;
+}
+
+void RendererVulkan::createSkyboxDescriptorSets() {
+    auto& gameObjects = scene_->getGameObjects();
+    std::shared_ptr<SkyboxRenderer> skyboxRenderer;
+    for (auto& go : gameObjects) {
+        skyboxRenderer = go->getComponent<SkyboxRenderer>();
+        if (skyboxRenderer) break;
+    }
+
+    if (!skyboxRenderer || !skyboxData_.hasTexture) {
+        return;
+    }
+
+    // 为skybox创建uniform buffers
+    VkDeviceSize bufferSize = sizeof(SkyboxUniformBufferObject);
+    std::vector<VkBuffer> skyboxUniformBuffers(MAX_FRAMES_IN_FLIGHT);
+    std::vector<VkDeviceMemory> skyboxUniformBuffersMemory(MAX_FRAMES_IN_FLIGHT);
+    std::vector<void*> skyboxUniformBuffersMapped(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vulkanContext_.createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, skyboxUniformBuffers[i], skyboxUniformBuffersMemory[i]);
+        vkMapMemory(vulkanContext_.device, skyboxUniformBuffersMemory[i], 0, bufferSize, 0, &skyboxUniformBuffersMapped[i]);
+    }
+
+    // 分配描述符集
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, skyboxData_.descriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+
+    skyboxData_.descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    vkAllocateDescriptorSets(vulkanContext_.device, &allocInfo, skyboxData_.descriptorSets.data());
+
+    // 获取cubemap
+    auto cubemap = skyboxRenderer->getCubemap();
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = skyboxUniformBuffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(SkyboxUniformBufferObject);
+
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = cubemap->getImageView();
+        imageInfo.sampler = cubemap->getSampler();
+
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = skyboxData_.descriptorSets[i];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = skyboxData_.descriptorSets[i];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(vulkanContext_.device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+    }
+
+    aout << "Skybox descriptor sets created successfully." << std::endl;
+}
+
 /**
  * @brief 更新 Uniform Buffer 数据（每帧调用）
  *
@@ -743,7 +1352,46 @@ void RendererVulkan::updateUniformBuffer(uint32_t currentImage) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     auto& gameObjects = scene_->getGameObjects();
+
+    // 分离MeshRenderer和SkyboxRenderer对象
+    std::vector<size_t> meshRendererIndices;
+    size_t skyboxIndex = SIZE_MAX;
+
     for (size_t i = 0; i < gameObjects.size(); i++) {
+        auto go = gameObjects[i];
+        if (go->getComponent<MeshRenderer>()) {
+            meshRendererIndices.push_back(i);
+        } else if (go->getComponent<SkyboxRenderer>()) {
+            skyboxIndex = i;
+        }
+    }
+
+    // 计算宽高比
+    float aspectRatio;
+    if (vulkanContext_.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+        vulkanContext_.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+        aspectRatio = vulkanContext_.swapChainExtent.height / (float) vulkanContext_.swapChainExtent.width;
+    } else {
+        aspectRatio = vulkanContext_.swapChainExtent.width / (float) vulkanContext_.swapChainExtent.height;
+    }
+
+    // 投影矩阵（所有对象共享）
+    Matrix4 proj = glm::perspective(
+        glm::radians(45.0f),
+        aspectRatio,
+        0.1f,
+        10.0f);
+    proj[1][1] *= -1;  // Vulkan Y轴翻转
+
+    // 视图矩阵（所有对象共享）
+    Matrix4 view = glm::lookAt(
+        glm::vec3(0.0f, 0.0f, 3.0f),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // 更新MeshRenderer对象的UBO
+    for (size_t j = 0; j < meshRendererIndices.size(); j++) {
+        size_t i = meshRendererIndices[j];
         auto go = gameObjects[i];
 
         // 更新立方体旋转动画
@@ -752,59 +1400,12 @@ void RendererVulkan::updateUniformBuffer(uint32_t currentImage) {
             go->rotation.y = time * 30.0f;
         }
 
-        // ============ 构建 Uniform Buffer Object ============
         UniformBufferObject ubo{};
-
-        // 1. Model 矩阵：物体变换矩阵
         ubo.model = go->getTransformMatrix();
+        ubo.view = view;
+        ubo.proj = proj;
 
-        // 2. View 矩阵：相机位置和方向
-        //    glm::lookAt(相机位置, 目标位置, 世界空间上方向)
-        //    相机位于 (0, 0, 3)，看向原点 (0, 0, 0)，Y 轴向上
-        ubo.view = glm::lookAt(
-            glm::vec3(0.0f, 0.0f, 3.0f),  // 相机位置
-            glm::vec3(0.0f, 0.0f, 0.0f),  // 目标位置
-            glm::vec3(0.0f, 1.0f, 0.0f)); // 上方向
-
-        // 3. Projection 矩阵：透视投影
-        //    glm::perspective(FOV, 宽高比, 近平面距离, 远平面距离)
-        //
-        //    重要：在横屏模式下，当 currentTransform 包含 ROTATE_90 或 ROTATE_270 时，
-        //    swapChainExtent 的宽高是交换的（例如 1080x1920 而不是 1920x1080），
-        //    因为 SwapChain 图像是垂直存储的，然后通过 preTransform 旋转显示。
-        //    因此我们需要根据 transform 决定是否交换宽高比。
-        float aspectRatio;
-        if (vulkanContext_.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
-            vulkanContext_.currentTransform & VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
-            // 90度或270度旋转：SwapChain 图像的宽高与显示方向相反，需要交换
-            aspectRatio = vulkanContext_.swapChainExtent.height / (float) vulkanContext_.swapChainExtent.width;
-        } else {
-            // 无旋转或180度旋转：直接使用 SwapChain 的宽高比
-            aspectRatio = vulkanContext_.swapChainExtent.width / (float) vulkanContext_.swapChainExtent.height;
-        }
-
-        // 调试输出（仅第一帧）
-        static bool debugPrinted = false;
-        if (!debugPrinted && i == 0) {
-            aout << "Projection Debug: swapChainExtent=" << vulkanContext_.swapChainExtent.width
-                 << "x" << vulkanContext_.swapChainExtent.height
-                 << ", transform=" << vulkanContext_.currentTransform
-                 << ", aspectRatio=" << aspectRatio << std::endl;
-            debugPrinted = true;
-        }
-
-        ubo.proj = glm::perspective(
-            glm::radians(45.0f),   // 45 度视野角
-            aspectRatio,            // 动态宽高比（横屏时 >1，竖屏时 <1）
-            0.1f,                   // 近平面距离
-            10.0f);                 // 远平面距离
-
-        // Vulkan 的 Y 轴方向与 OpenGL 相反，需要翻转 Y 轴
-        // OpenGL: Y 轴向上，Vulkan: Y 轴向下
-        ubo.proj[1][1] *= -1;
-
-        // 将 UBO 数据复制到 Uniform Buffer（已映射的内存）
-        memcpy(renderObjects[i].uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+        memcpy(renderObjects[j].uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
     }
 }
 void RendererVulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
@@ -826,9 +1427,7 @@ void RendererVulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t
 
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-
-    // 【新增】动态设置 Viewport 和 Scissor
+    // 设置 Viewport 和 Scissor
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -844,19 +1443,66 @@ void RendererVulkan::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     auto& gameObjects = scene_->getGameObjects();
+
+    // 分离MeshRenderer和SkyboxRenderer对象
+    std::vector<size_t> meshRendererIndices;
+    size_t skyboxIndex = SIZE_MAX;
+
     for (size_t i = 0; i < gameObjects.size(); i++) {
+        auto go = gameObjects[i];
+        if (go->getComponent<MeshRenderer>()) {
+            meshRendererIndices.push_back(i);
+        } else if (go->getComponent<SkyboxRenderer>()) {
+            skyboxIndex = i;
+        }
+    }
+
+    // 1. 先渲染Skybox（如果存在）
+    // Skybox应该在场景对象之前渲染，因为它作为背景
+    if (skyboxData_.pipeline != VK_NULL_HANDLE && skyboxData_.hasTexture) {
+        // 有有效的cubemap纹理，渲染skybox
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxData_.pipeline);
+
+        VkBuffer vertexBuffers[] = {skyboxData_.vertexBuffer};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+        vkCmdBindIndexBuffer(commandBuffer, skyboxData_.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxData_.pipelineLayout, 0, 1, &skyboxData_.descriptorSets[currentFrame], 0, nullptr);
+
+        const auto& skyboxIndices = SkyboxRenderer::getSkyboxIndices();
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(skyboxIndices.size()), 1, 0, 0, 0);
+    } else if (skyboxIndex != SIZE_MAX) {
+        // 有skybox对象但没有有效纹理，渲染纯色背景
+        if (clearColorData_.pipeline != VK_NULL_HANDLE) {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, clearColorData_.pipeline);
+
+            VkBuffer vertexBuffers[] = {clearColorData_.vertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+            // 渲染4个顶点组成全屏四边形 (TRIANGLE_STRIP)
+            vkCmdDraw(commandBuffer, 4, 1, 0, 0);
+        }
+    }
+
+    // 2. 渲染普通MeshRenderer对象
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+    for (size_t j = 0; j < meshRendererIndices.size(); j++) {
+        size_t i = meshRendererIndices[j];
         auto go = gameObjects[i];
         auto meshRenderer = go->getComponent<MeshRenderer>();
         auto model = meshRenderer->getModel();
 
-        VkBuffer vertexBuffers[] = {renderObjects[i].vertexBuffer};
+        VkBuffer vertexBuffers[] = {renderObjects[j].vertexBuffer};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
-        vkCmdBindIndexBuffer(commandBuffer, renderObjects[i].indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(commandBuffer, renderObjects[j].indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &renderObjects[i].descriptorSets[currentFrame], 0, nullptr);
-        
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &renderObjects[j].descriptorSets[currentFrame], 0, nullptr);
+
         vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(model->getIndexCount()), 1, 0, 0, 0);
     }
 
@@ -989,9 +1635,33 @@ void RendererVulkan::cleanupSwapChain() {
     vkDestroyPipeline(vulkanContext_.device, graphicsPipeline, nullptr);
     graphicsPipeline = VK_NULL_HANDLE;
 
+    // 2.1 清理 ClearColor Pipeline
+    if (clearColorData_.pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(vulkanContext_.device, clearColorData_.pipeline, nullptr);
+        clearColorData_.pipeline = VK_NULL_HANDLE;
+    }
+
+    // 2.2 清理 Skybox Pipeline
+    if (skyboxData_.pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(vulkanContext_.device, skyboxData_.pipeline, nullptr);
+        skyboxData_.pipeline = VK_NULL_HANDLE;
+    }
+
     // 3. 清理 Pipeline Layout
     vkDestroyPipelineLayout(vulkanContext_.device, pipelineLayout, nullptr);
     pipelineLayout = VK_NULL_HANDLE;
+
+    // 3.1 清理 ClearColor Pipeline Layout
+    if (clearColorData_.pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(vulkanContext_.device, clearColorData_.pipelineLayout, nullptr);
+        clearColorData_.pipelineLayout = VK_NULL_HANDLE;
+    }
+
+    // 3.2 清理 Skybox Pipeline Layout
+    if (skyboxData_.pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(vulkanContext_.device, skyboxData_.pipelineLayout, nullptr);
+        skyboxData_.pipelineLayout = VK_NULL_HANDLE;
+    }
 
     // 4. 清理 Render Pass
     //    虽然 Render Pass 本身不直接依赖 SwapChain 尺寸，但为了完整性我们重新创建
@@ -1374,6 +2044,10 @@ void RendererVulkan::recreateSwapChain() {
         framebufferInfo.layers = 1;
         vkCreateFramebuffer(vulkanContext_.device, &framebufferInfo, nullptr, &vulkanContext_.swapChainFramebuffers[i]);
     }
+
+    // ============ 6. 重建 ClearColor 和 Skybox Pipeline ============
+    createClearColorPipeline();
+    createSkyboxPipeline();
 
     aout << "SwapChain recreated successfully with new size: "
          << vulkanContext_.swapChainExtent.width << "x"
