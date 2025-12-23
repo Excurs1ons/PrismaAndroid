@@ -2087,3 +2087,22 @@ void RendererVulkan::recreateSwapChain() {
          << vulkanContext_.swapChainExtent.width << "x"
          << vulkanContext_.swapChainExtent.height << std::endl;
 }
+
+
+void RendererVulkan::onConfigChanged() {
+    // 检测屏幕旋转，当 transform 变化时重建 SwapChain
+    VkSurfaceCapabilitiesKHR capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+            vulkanContext_.physicalDevice,
+            vulkanContext_.surface,
+            &capabilities);
+
+    // 如果 transform 发生变化，重建 SwapChain
+    if (capabilities.currentTransform != vulkanContext_.currentTransform) {
+        aout << "=== Screen rotation detected ===" << std::endl;
+        aout << "Old transform: 0x" << std::hex << vulkanContext_.currentTransform << std::dec << std::endl;
+        aout << "New transform: 0x" << std::hex << capabilities.currentTransform << std::dec << std::endl;
+
+        recreateSwapChain();
+    }
+}
