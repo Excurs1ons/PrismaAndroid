@@ -26,7 +26,9 @@ add_library(myapplication SHARED
         ShaderVulkan.cpp
         VulkanContext.cpp
         TextureAsset.cpp
-        Utility.cpp)
+        Utility.cpp
+        CubemapTextureAsset.cpp
+        SkyboxRenderer.cpp)
 
 # Searches for a package provided by the game activity dependency
 find_package(game-activity REQUIRED CONFIG)
