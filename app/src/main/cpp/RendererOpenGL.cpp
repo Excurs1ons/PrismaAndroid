@@ -158,6 +158,10 @@ void RendererOpenGL::render() {
     assert(swapResult == EGL_TRUE);
 }
 
+void RendererOpenGL::onConfigChanged() {
+    // OpenGL 版本每帧都会调用 updateRenderArea()，这里不需要额外处理
+}
+
 void RendererOpenGL::init() {
     // Choose your render attributes
     constexpr EGLint attribs[] = {

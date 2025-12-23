@@ -27,6 +27,11 @@ public:
      */
     void render();
 
+    /*!
+     * Handles configuration changes (e.g., screen rotation)
+     */
+    void onConfigChanged();
+
 private:
     android_app *app_;
     std::unique_ptr<RendererAPI> impl_;

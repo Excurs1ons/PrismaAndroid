@@ -17,6 +17,7 @@ public:
 
     void init() override;
     void render() override;
+    void onConfigChanged() override;  // 空实现，OpenGL 不需要特殊处理
 
 private:
     void updateRenderArea();

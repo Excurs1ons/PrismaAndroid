@@ -14,6 +14,7 @@ public:
 
     void init() override;
     void render() override;
+    void onConfigChanged() override;  // 处理屏幕旋转
 
     // SwapChain 重建相关函数（处理屏幕旋转）
     void cleanupSwapChain();      // 清理旧的 SwapChain 相关资源

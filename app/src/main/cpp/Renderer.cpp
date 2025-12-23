@@ -26,6 +26,12 @@ void Renderer::render() {
     }
 }
 
+void Renderer::onConfigChanged() {
+    if (impl_) {
+        impl_->onConfigChanged();
+    }
+}
+
 void Renderer::handleInput() {
     // handle all queued inputs
     auto *inputBuffer = android_app_swap_input_buffers(app_);
