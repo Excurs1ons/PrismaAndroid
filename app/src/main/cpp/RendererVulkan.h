@@ -4,6 +4,12 @@
 #include "RendererAPI.h"
 #include "VulkanContext.h"
 #include "Scene.h"
+#include "renderer/RenderPipeline.h"
+#include <memory>
+
+// 前向声明
+class BackgroundPass;
+class OpaquePass;
 
 struct android_app;
 
@@ -21,10 +27,9 @@ public:
     void recreateSwapChain();     // 重建 SwapChain 以适应新的屏幕尺寸
 
 private:
+    // === 初始化方法 ===
     void createScene();
-    void createGraphicsPipeline();
-    void createSkyboxPipeline();  // 创建Skybox渲染管线
-    void createClearColorPipeline();  // 创建纯色渲染管线（skybox纹理为空时使用）
+    void createRenderPipeline();     // 创建逻辑渲染管线（封装 Pass）
     void createFramebuffers();
     void createCommandPool();
     void createTextureImage();
@@ -35,68 +40,38 @@ private:
     void createUniformBuffers();
     void createDescriptorPool();
     void createDescriptorSets();
-    void createSkyboxDescriptorSets();  // 创建Skybox描述符集
+    void createSkyboxDescriptorSets();
     void createCommandBuffers();
     void createSyncObjects();
-    
+
+    // === 渲染方法 ===
     void updateUniformBuffer(uint32_t currentImage);
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 
     android_app *app_;
     VulkanContext vulkanContext_;
     std::unique_ptr<Scene> scene_;
-    
+
     const int MAX_FRAMES_IN_FLIGHT = 2;
     uint32_t currentFrame = 0;
 
-    struct RenderObjectData {
-        VkBuffer vertexBuffer;
-        VkDeviceMemory vertexBufferMemory;
-        VkBuffer indexBuffer;
-        VkDeviceMemory indexBufferMemory;
 
-        std::vector<VkBuffer> uniformBuffers;
-        std::vector<VkDeviceMemory> uniformBuffersMemory;
-        std::vector<void*> uniformBuffersMapped;
-        std::vector<VkDescriptorSet> descriptorSets;
-    };
 
+
+
+    // === 逻辑渲染管线 ===
+    std::unique_ptr<RenderPipeline> renderPipeline_;
+
+    // === 临时数据（初始化后会移动到 Pass 中） ===
     std::vector<RenderObjectData> renderObjects;
-
-    // Skybox渲染数据
-    struct SkyboxRenderData {
-        VkBuffer vertexBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
-        VkBuffer indexBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-        VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-        std::vector<VkDescriptorSet> descriptorSets;
-        std::vector<VkBuffer> uniformBuffers;
-        std::vector<VkDeviceMemory> uniformBuffersMemory;
-        std::vector<void*> uniformBuffersMapped;
-        bool hasTexture = false;  // 是否有有效的cubemap纹理
-    } skyboxData_;
-
-    // 纯色渲染数据（skybox纹理为空时使用）
-    struct ClearColorData {
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-        VkBuffer vertexBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
-    } clearColorData_;
+    SkyboxRenderData skyboxData_;
+    ClearColorData clearColorData_;
 
     // Vulkan resources for the scene
+    // （Pipeline 创建已迁移到 Pass，但 descriptorSetLayout 仍保留用于创建 descriptor sets）
     VkDescriptorSetLayout descriptorSetLayout;
-    VkPipelineLayout pipelineLayout;
-    VkPipeline graphicsPipeline;
 
     VkDescriptorPool descriptorPool;
-
-    // Texture resources are managed by TextureAsset, but we might need to keep track if we want to support multiple textures later.
-    // For now, we assume TextureAsset handles creation/destruction of image/view/sampler, 
-    // but we still need descriptor sets to point to them.
 
 };
 
