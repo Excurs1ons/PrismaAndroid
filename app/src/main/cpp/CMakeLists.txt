@@ -44,30 +44,33 @@ message(STATUS "Snappy fetched successfully!")
 message(STATUS "Fetching Hap Decoder...")
 
 FetchContent_Declare(
-        hap
+        hap_decoder
         GIT_REPOSITORY https://github.com/Vidvox/hap.git
 )
-#
-## 注意：Hap 官方仓库可能没有 CMakeLists.txt，或者不符合我们的需求
-## 所以我们只用 FetchContent 下载源码，然后手动定义 Library
-#FetchContent_GetProperties(hap_decoder)
-#if(NOT hap_decoder_POPULATED)
-#    FetchContent_Populate(hap_decoder)
-#
-#    # 手动创建一个静态库目标
-#    add_library(hap_static STATIC
-#            ${hap_decoder_SOURCE_DIR}/hap.c
-#            ${hap_decoder_SOURCE_DIR}/hap.h
-#    )
-#
-#    # 关键点：Hap 的源码里有一行 #include "snappy-c.h"
-#    # 我们需要把 Snappy 的头文件路径暴露给 Hap
-#    target_link_libraries(hap_static PRIVATE snappy)
-#
-#    # 把 Hap 的头文件路径暴露给你的引擎
-#    target_include_directories(hap_static PUBLIC ${hap_decoder_SOURCE_DIR})
-#endif()
-FetchContent_MakeAvailable(hap)
+
+# 注意：Hap 官方仓库没有 CMakeLists.txt
+# 所以我们只用 FetchContent 下载源码，然后手动定义 Library
+FetchContent_GetProperties(hap_decoder)
+if(NOT hap_decoder_POPULATED)
+    FetchContent_Populate(hap_decoder)
+
+    # 手动创建一个静态库目标
+    # 注意：hap.c 文件在 source 子目录中
+    add_library(hap_static STATIC
+            ${hap_decoder_SOURCE_DIR}/source/hap.c
+    )
+
+    # 关键点：Hap 的源码里有一行 #include "snappy-c.h"
+    # 我们需要把 Snappy 的头文件路径暴露给 Hap
+    target_include_directories(hap_static PRIVATE
+            ${snappy_SOURCE_DIR}
+            ${hap_decoder_SOURCE_DIR}/source
+    )
+    target_link_libraries(hap_static PRIVATE snappy)
+
+    # 把 Hap 的头文件路径暴露给你的引擎
+    target_include_directories(hap_static PUBLIC ${hap_decoder_SOURCE_DIR}/source)
+endif()
 
 message(STATUS "Hap Decoder fetched successfully!")
 
@@ -116,7 +119,6 @@ target_link_libraries(myapplication
 target_link_options(myapplication PRIVATE "-Wl,-z,max-page-size=16384")
 
 target_link_libraries(myapplication glm
-        #hap_static  # 手动定义的 Hap 库
-        hap
+        hap_static  # 手动定义的 Hap 库
         snappy      # Snappy 库
 )

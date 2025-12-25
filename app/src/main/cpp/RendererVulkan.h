@@ -39,6 +39,7 @@ private:
     void createIndexBuffer();
     void createUniformBuffers();
     void createDescriptorPool();
+    void createDescriptorSetLayout();  // 创建描述符集布局（需要在 allocate descriptor sets 之前调用）
     void createDescriptorSets();
     void createSkyboxDescriptorSets();
     void createCommandBuffers();

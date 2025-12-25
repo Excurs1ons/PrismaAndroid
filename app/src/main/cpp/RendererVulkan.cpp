@@ -90,8 +90,7 @@ RendererVulkan::~RendererVulkan() {
     }
     renderObjects.clear();
 
-    vkDestroyPipeline(vulkanContext_.device, graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(vulkanContext_.device, pipelineLayout, nullptr);
+    // Pipeline 清理已迁移到 RenderPipeline 架构（在 renderPipeline_->cleanup() 中处理）
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vkDestroySemaphore(vulkanContext_.device, vulkanContext_.renderFinishedSemaphores[i], nullptr);
@@ -341,6 +340,7 @@ void RendererVulkan::init() {
     createIndexBuffer();
     createUniformBuffers();
     createDescriptorPool();
+    createDescriptorSetLayout();   // 创建描述符集布局（必须在 createDescriptorSets 之前调用）
     createDescriptorSets();
     createSkyboxDescriptorSets();  // 创建Skybox描述符集
 
@@ -677,6 +677,36 @@ void RendererVulkan::createDescriptorPool() {
     poolInfo.maxSets = totalSets;
 
     vkCreateDescriptorPool(vulkanContext_.device, &poolInfo, nullptr, &descriptorPool);
+}
+
+void RendererVulkan::createDescriptorSetLayout() {
+    // 定义 MeshRenderer 的 Descriptor Set Layout
+    // Binding 0: Uniform Buffer (UBO)
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;
+
+    // Binding 1: Combined Image Sampler (Texture)
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    if (vkCreateDescriptorSetLayout(vulkanContext_.device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create descriptor set layout!");
+    }
 }
 
 void RendererVulkan::createDescriptorSets() {
