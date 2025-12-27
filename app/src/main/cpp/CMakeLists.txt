@@ -32,8 +32,9 @@ set(PRISMA_ENABLE_RENDER_DX12 OFF CACHE BOOL "Enable DirectX12 render device" FO
 # 可选：启用 OpenGL 作为备用渲染后端
 set(PRISMA_ENABLE_RENDER_OPENGL OFF CACHE BOOL "Enable OpenGL render device" FORCE)
 
-# 可选：启用 SDL3 音频
-set(PRISMA_ENABLE_AUDIO_SDL3 ON CACHE BOOL "Enable SDL3 audio device" FORCE)
+# 禁用 SDL3 音频和渲染（Android 不需要 SDL3）
+set(PRISMA_ENABLE_AUDIO_SDL3 OFF CACHE BOOL "Enable SDL3 audio device" FORCE)
+set(PRISMA_ENABLE_RENDER_SDL3 OFF CACHE BOOL "Enable SDL3 render device" FORCE)
 
 # 使用 GLM (Android 平台)
 set(PRISMA_USE_DIRECTXMATH OFF CACHE BOOL "Use DirectXMath" FORCE)
