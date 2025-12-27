@@ -74,7 +74,20 @@ endif()
 
 message(STATUS "Hap Decoder fetched successfully!")
 
-# Creates your game shared library. The name must be the same as the
+
+# 创建一个名为 stb 的接口库
+# INTERFACE 意味着它不产生编译产物（如 .lib 或 .a），只传递属性
+add_library(stb INTERFACE)
+
+# 添加头文件搜索路径
+# 这里的 ${CMAKE_CURRENT_SOURCE_DIR} 指的是 CMakeLists.txt 所在的目录
+target_include_directories(stb INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/external/stb
+)
+
+
+# 创建myapplication.so
+# The name must be the same as the
 # one used for loading in your Kotlin/Java or AndroidManifest.txt files.
 add_library(myapplication SHARED
         main.cpp
@@ -92,7 +105,9 @@ add_library(myapplication SHARED
         # 逻辑渲染层
         renderer/RenderPipeline.cpp
         renderer/OpaquePass.cpp
-        renderer/BackgroundPass.cpp)
+        renderer/BackgroundPass.cpp
+        stb_impl.cpp
+)
 
 # Searches for a package provided by the game activity dependency
 find_package(game-activity REQUIRED CONFIG)
@@ -113,7 +128,9 @@ target_link_libraries(myapplication
         android
         log
         ${vulkan-lib}
-
+        # 链接 stb
+        # 链接 stb 后，自动继承 external/stb 这个 include 路径
+        stb
 )
 
 target_link_options(myapplication PRIVATE "-Wl,-z,max-page-size=16384")
