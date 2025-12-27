@@ -11,11 +11,27 @@ project("myapplication")
 
 include(FetchContent)
 
+message(STATUS "Fetching PrismaEngine...")
+FetchContent_Declare(
+        PrismaEngine
+        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../src/engine
+)
+# 让 CMake 把它加进来（会执行 MyEngine 里的 CMakeLists.txt）
+FetchContent_MakeAvailable(PrismaEngine)
+message(STATUS "PrismaEngine fetched successfully!")
+
 message(STATUS "Fetching GLM...")
 FetchContent_Declare(
         glm
         GIT_REPOSITORY https://github.com/g-truc/glm.git
 )
+# 关键步骤：在调用 MakeAvailable 之前，禁用 GLM 的测试和示例
+# GLM_BUILD_TESTS: 关闭单元测试
+# GLM_BUILD_TESTS: 关闭示例代码
+set(GLM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+message(STATUS "Setting Build Test Off")
+set(GLM_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+message(STATUS "Setting Build Example Off")
 FetchContent_MakeAvailable(glm)
 message(STATUS "GLM fetched successfully!")
 
