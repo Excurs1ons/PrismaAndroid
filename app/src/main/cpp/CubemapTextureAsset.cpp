@@ -37,7 +37,7 @@ std::shared_ptr<CubemapTextureAsset> CubemapTextureAsset::loadFromAssets(
         // 使用AImageDecoder加载图像（与TextureAsset相同的方式）
         auto asset = AAssetManager_open(assetManager, facePaths[i].c_str(), AASSET_MODE_BUFFER);
         if (!asset) {
-            aout << "Error: Failed to load cubemap face: " << facePaths[i] << std::endl;
+            aout << "Error: 加载立方贴图的面失败: " << facePaths[i] << std::endl;
             return nullptr;
         }
 

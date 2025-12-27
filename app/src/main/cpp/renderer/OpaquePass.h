@@ -47,7 +47,8 @@ struct RenderObjectData {
  */
 class OpaquePass : public RenderPass {
 public:
-    OpaquePass() = default;
+
+    OpaquePass():RenderPass("Opaque Pass"){};
     ~OpaquePass() override = default;
 
     // 禁止拷贝

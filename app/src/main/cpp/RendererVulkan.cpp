@@ -117,7 +117,7 @@ RendererVulkan::~RendererVulkan() {
 }
 
 void RendererVulkan::init() {
-    aout << "Initializing Vulkan Renderer" << std::endl;
+    aout << "Vulkan渲染器初始化..." << std::endl;
     
     // 1. Create Instance
     VkApplicationInfo appInfo{};
@@ -455,11 +455,11 @@ void RendererVulkan::createScene() {
 
         if (cubemap) {
             skyboxGO->addComponent(std::make_shared<SkyboxRenderer>(cubemap));
-            aout << "Skybox created successfully with cubemap texture!" << std::endl;
+            aout << "成功使用立方体贴图创建天空盒!" << std::endl;
         } else {
             // 即使没有纹理，也添加SkyboxRenderer（会使用纯色渲染）
             skyboxGO->addComponent(std::make_shared<SkyboxRenderer>(nullptr));
-            aout << "Skybox texture files not found, using clear color fallback." << std::endl;
+            aout << "未找到立方体贴图，创建纯色天空盒!" << std::endl;
         }
         scene_->addGameObject(skyboxGO);
     }
@@ -543,7 +543,7 @@ void RendererVulkan::createVertexBuffer() {
         vkDestroyBuffer(vulkanContext_.device, stagingBuffer, nullptr);
         vkFreeMemory(vulkanContext_.device, stagingBufferMemory, nullptr);
 
-        aout << "Skybox vertex buffer created." << std::endl;
+        aout << "天空盒 vertex buffer 已创建." << std::endl;
     }
 }
 
@@ -609,7 +609,7 @@ void RendererVulkan::createIndexBuffer() {
         vkDestroyBuffer(vulkanContext_.device, stagingBuffer, nullptr);
         vkFreeMemory(vulkanContext_.device, stagingBufferMemory, nullptr);
 
-        aout << "Skybox index buffer created." << std::endl;
+        aout << "天空盒 index buffer 已创建." << std::endl;
     }
 }
 
@@ -788,7 +788,7 @@ void RendererVulkan::createCommandBuffers() {
 }
 
 void RendererVulkan::createRenderPipeline() {
-    aout << "Creating logical render pipeline..." << std::endl;
+    aout << "创建渲染管线..." << std::endl;
 
     renderPipeline_ = std::make_unique<RenderPipeline>();
 
@@ -816,7 +816,7 @@ void RendererVulkan::createRenderPipeline() {
     // 初始化 Pipeline
     renderPipeline_->initialize(vulkanContext_.device, vulkanContext_.renderPass);
 
-    aout << "Logical render pipeline created successfully." << std::endl;
+    aout << "渲染管线创建成功." << std::endl;
 }
 
 void RendererVulkan::createSkyboxDescriptorSets() {

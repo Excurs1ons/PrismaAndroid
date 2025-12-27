@@ -114,3 +114,4 @@ Thumbs.db
 *.tar.gz
 *.rar
 /CLAUDE.md
+/.claude/settings.local.json

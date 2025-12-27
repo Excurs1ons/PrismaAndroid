@@ -2,7 +2,8 @@
 #define PRISMA_ANDROID_RENDER_PASS_H
 
 #include <vulkan/vulkan.h>
-
+#include <string>
+#include <utility>
 /**
  * 逻辑 RenderPass 基类
  *
@@ -21,6 +22,10 @@
  */
 class RenderPass {
 public:
+    std::string name = "Unnamed Pass";
+    explicit RenderPass(std::string pass_name){
+        name = std::move(pass_name);
+    }
     virtual ~RenderPass() = default;
 
     /**
@@ -53,7 +58,7 @@ public:
     virtual void cleanup(VkDevice device) = 0;
 
     // 获取 pipeline（用于调试/验证）
-    VkPipeline getPipeline() const { return pipeline_; }
+    [[nodiscard]] VkPipeline getPipeline() const { return pipeline_; }
 
 protected:
     // [Vulkan-Specific] 以下成员变量在切换 API 时需要替换
@@ -65,6 +70,7 @@ protected:
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE; // Vulkan Pipeline 布局
     // DirectX 12: 无需对应（Root Signature 在其他地方管理）
     // Metal: MTLArgumentEncoder
+
 };
 
 #endif //PRISMA_ANDROID_RENDER_PASS_H

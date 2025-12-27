@@ -18,6 +18,7 @@ extern "C" {
 void handle_cmd(android_app *pApp, int32_t cmd) {
     switch (cmd) {
         case APP_CMD_INIT_WINDOW:
+            aout << "Event: \"APP_CMD_INIT_WINDOW\" 窗口初始化" << std::endl;
             // A new window is created, associate a renderer with it. You may replace this with a
             // "game" class if that suits your needs. Remember to change all instances of userData
             // if you change the class here as a reinterpret_cast is dangerous this in the
@@ -71,7 +72,7 @@ bool motion_event_filter_func(const GameActivityMotionEvent *motionEvent) {
  */
 void android_main(struct android_app *pApp) {
     // Can be removed, useful to ensure your code is running
-    aout << "Welcome to android_main" << std::endl;
+    aout << "主函数开始" << std::endl;
 
     // Register an event handler for Android events
     pApp->onAppCmd = handle_cmd;

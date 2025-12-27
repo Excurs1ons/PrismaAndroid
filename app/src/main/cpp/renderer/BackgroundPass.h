@@ -61,7 +61,8 @@ struct ClearColorData {
  */
 class BackgroundPass : public RenderPass {
 public:
-    BackgroundPass() = default;
+    BackgroundPass():RenderPass("Background Pass"){};
+
     ~BackgroundPass() override = default;
 
     // 禁止拷贝
@@ -123,6 +124,7 @@ public:
      * 设置当前渲染变换（用于 viewport 计算）
      */
     void setCurrentTransform(VkSurfaceTransformFlagBitsKHR transform);
+
 
 private:
     /**

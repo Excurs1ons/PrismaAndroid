@@ -2,10 +2,18 @@
 #include "RenderPass.h"
 #include "OpaquePass.h"
 #include "BackgroundPass.h"
+#include "../AndroidOut.h"
 #include <stdexcept>
 
 void RenderPipeline::addPass(std::unique_ptr<RenderPass> pass) {
+    if (!pass)
+    {
+        aout << "无效的Pass" << std::endl;
+        return;
+    }
+    aout << "已添加Pass:" << std::string(pass->name) << std::endl;
     passes_.push_back(std::move(pass));
+    //move之后原引用置空
 }
 
 void RenderPipeline::initialize(VkDevice device, VkRenderPass apiRenderPass) {
