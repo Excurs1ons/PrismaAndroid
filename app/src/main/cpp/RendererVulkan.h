@@ -70,7 +70,8 @@ private:
 
     // Vulkan resources for the scene
     // （Pipeline 创建已迁移到 Pass，但 descriptorSetLayout 仍保留用于创建 descriptor sets）
-    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorSetLayout descriptorSetLayout;        // MeshRenderer 用的 descriptor set layout
+    VkDescriptorSetLayout skyboxDescriptorSetLayout;  // Skybox 用的 descriptor set layout
 
     VkDescriptorPool descriptorPool;
 

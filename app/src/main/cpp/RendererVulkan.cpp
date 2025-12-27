@@ -545,6 +545,36 @@ void RendererVulkan::createVertexBuffer() {
 
         aout << "天空盒 vertex buffer 已创建." << std::endl;
     }
+
+    // === 创建 ClearColor 的顶点缓冲区 ===
+    // ClearColor 渲染一个覆盖全屏的矩形，使用 TRIANGLE_STRIP
+    // 4 个顶点，每个顶点是一个 2D 位置 (vec2)
+    const std::vector<glm::vec2> clearColorVertices = {
+        {-1.0f, -1.0f},  // 左下
+        { 1.0f, -1.0f},  // 右下
+        {-1.0f,  1.0f},  // 左上
+        { 1.0f,  1.0f}   // 右上
+    };
+
+    VkDeviceSize clearColorBufferSize = sizeof(glm::vec2) * clearColorVertices.size();
+
+    VkBuffer clearColorStagingBuffer;
+    VkDeviceMemory clearColorStagingBufferMemory;
+    vulkanContext_.createBuffer(clearColorBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, clearColorStagingBuffer, clearColorStagingBufferMemory);
+
+    void* clearColorData;
+    vkMapMemory(vulkanContext_.device, clearColorStagingBufferMemory, 0, clearColorBufferSize, 0, &clearColorData);
+    memcpy(clearColorData, clearColorVertices.data(), static_cast<size_t>(clearColorBufferSize));
+    vkUnmapMemory(vulkanContext_.device, clearColorStagingBufferMemory);
+
+    vulkanContext_.createBuffer(clearColorBufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, clearColorData_.vertexBuffer, clearColorData_.vertexBufferMemory);
+
+    vulkanContext_.copyBuffer(clearColorStagingBuffer, clearColorData_.vertexBuffer, clearColorBufferSize);
+
+    vkDestroyBuffer(vulkanContext_.device, clearColorStagingBuffer, nullptr);
+    vkFreeMemory(vulkanContext_.device, clearColorStagingBufferMemory, nullptr);
+
+    aout << "ClearColor vertex buffer 已创建." << std::endl;
 }
 
 void RendererVulkan::createIndexBuffer() {
@@ -680,7 +710,7 @@ void RendererVulkan::createDescriptorPool() {
 }
 
 void RendererVulkan::createDescriptorSetLayout() {
-    // 定义 MeshRenderer 的 Descriptor Set Layout
+    // === 1. 创建 MeshRenderer 的 Descriptor Set Layout ===
     // Binding 0: Uniform Buffer (UBO)
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
@@ -707,6 +737,41 @@ void RendererVulkan::createDescriptorSetLayout() {
     if (vkCreateDescriptorSetLayout(vulkanContext_.device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create descriptor set layout!");
     }
+
+    // === 2. 创建 Skybox 的 Descriptor Set Layout ===
+    // Skybox 着色器期望的 bindings:
+    // - Binding 0: Uniform Buffer (view + proj 矩阵)
+    // - Binding 1: Combined Image Sampler (cubemap)
+
+    VkDescriptorSetLayoutBinding skyboxUboBinding{};
+    skyboxUboBinding.binding = 0;
+    skyboxUboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    skyboxUboBinding.descriptorCount = 1;
+    skyboxUboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    skyboxUboBinding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutBinding skyboxSamplerBinding{};
+    skyboxSamplerBinding.binding = 1;
+    skyboxSamplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    skyboxSamplerBinding.descriptorCount = 1;
+    skyboxSamplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    skyboxSamplerBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> skyboxBindings = {skyboxUboBinding, skyboxSamplerBinding};
+
+    VkDescriptorSetLayoutCreateInfo skyboxLayoutInfo{};
+    skyboxLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    skyboxLayoutInfo.bindingCount = static_cast<uint32_t>(skyboxBindings.size());
+    skyboxLayoutInfo.pBindings = skyboxBindings.data();
+
+    if (vkCreateDescriptorSetLayout(vulkanContext_.device, &skyboxLayoutInfo, nullptr, &skyboxDescriptorSetLayout) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create skybox descriptor set layout!");
+    }
+
+    // 将 skybox descriptor set layout 存储到 skyboxData_ 中，用于后续创建 descriptor sets
+    skyboxData_.descriptorSetLayout = skyboxDescriptorSetLayout;
+
+    aout << "Descriptor set layouts created successfully (MeshRenderer + Skybox)." << std::endl;
 }
 
 void RendererVulkan::createDescriptorSets() {
@@ -827,7 +892,14 @@ void RendererVulkan::createSkyboxDescriptorSets() {
         if (skyboxRenderer) break;
     }
 
-    if (!skyboxRenderer || !skyboxData_.hasTexture) {
+    if (!skyboxRenderer) {
+        return;
+    }
+
+    // 检查 skybox 是否有有效的纹理
+    skyboxData_.hasTexture = skyboxRenderer->hasValidTexture();
+    if (!skyboxData_.hasTexture) {
+        aout << "Skybox has no valid texture, skipping descriptor set creation." << std::endl;
         return;
     }
 

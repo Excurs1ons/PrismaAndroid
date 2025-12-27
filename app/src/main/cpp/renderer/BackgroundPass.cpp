@@ -30,6 +30,12 @@ void BackgroundPass::createSkyboxPipeline(VkDevice device, VkRenderPass renderPa
         return;
     }
 
+    if (skyboxData_.descriptorSetLayout == VK_NULL_HANDLE) {
+        aout << "BackgroundPass: Skybox descriptor set layout is NULL, skipping skybox pipeline creation." << std::endl;
+        skyboxData_.hasTexture = false;
+        return;
+    }
+
     auto vertShaderCode = ShaderVulkan::loadShader(app_->activity->assetManager, "shaders/skybox.vert.spv");
     auto fragShaderCode = ShaderVulkan::loadShader(app_->activity->assetManager, "shaders/skybox.frag.spv");
 
