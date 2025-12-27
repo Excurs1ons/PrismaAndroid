@@ -33,7 +33,7 @@ set(PRISMA_ENABLE_RENDER_DX12 OFF CACHE BOOL "Enable DirectX12 render device" FO
 set(PRISMA_ENABLE_RENDER_OPENGL OFF CACHE BOOL "Enable OpenGL render device" FORCE)
 
 # 可选：启用 SDL3 音频
-set(PRISMA_ENABLE_AUDIO_SDL3 OFF CACHE BOOL "Enable SDL3 audio device" FORCE)
+set(PRISMA_ENABLE_AUDIO_SDL3 ON CACHE BOOL "Enable SDL3 audio device" FORCE)
 
 # 使用 GLM (Android 平台)
 set(PRISMA_USE_DIRECTXMATH OFF CACHE BOOL "Use DirectXMath" FORCE)
@@ -45,13 +45,20 @@ set(PRISMA_USE_FETCHCONTENT ON CACHE BOOL "Use FetchContent" FORCE)
 # ========== 包含引擎的 CMake 模块 ==========
 
 # 获取 PrismaEngine 根目录
-get_filename_component(PRISMA_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../" ABSOLUTE)
+# 从 app/src/main/cpp 向上 7 级到 PrismaEngine 根目录
+get_filename_component(PRISMA_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../" ABSOLUTE)
+
+# 打印路径用于调试
+message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
+message(STATUS "PRISMA_ENGINE_ROOT: ${PRISMA_ENGINE_ROOT}")
+message(STATUS "DeviceOptions.cmake exists: ${EXISTS}${PRISMA_ENGINE_ROOT}/cmake/DeviceOptions.cmake}")
+message(STATUS "FetchContent.cmake exists: ${EXISTS}${PRISMA_ENGINE_ROOT}/cmake/FetchContent.cmake}")
 
 # 包含引擎的 CMake 模块
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PRISMA_ENGINE_ROOT}/cmake")
 
 # 包含设备选项配置
-include(${PRISMA_ENGINE_ROOT}/cmake/DeviceOptions.cmake)
+include(${PRISMA_ENGINE_ROOT}/cmake/DeviceOptions.cmake OPTIONAL)
 
 # 包含 FetchContent 依赖管理 (会自动下载所有需要的依赖)
 include(${PRISMA_ENGINE_ROOT}/cmake/FetchContent.cmake)
