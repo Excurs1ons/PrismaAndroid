@@ -63,26 +63,19 @@ include(${PRISMA_ENGINE_ROOT}/cmake/DeviceOptions.cmake OPTIONAL)
 # 包含 FetchContent 依赖管理 (会自动下载所有需要的依赖)
 include(${PRISMA_ENGINE_ROOT}/cmake/FetchContent.cmake)
 
-# ========== 使用 FetchContent 引入引擎源码 ==========
-
-message(STATUS "=== 获取 PrismaEngine 源码 ===")
-
-FetchContent_Declare(
-    PrismaEngine
-    SOURCE_DIR ${PRISMA_ENGINE_ROOT}/src/engine
-)
-
-# 注意: 我们不使用 FetchContent_MakeAvailable，因为引擎有自己的 CMakeLists.txt
-# 我们手动添加子目录
-FetchContent_GetProperties(PrismaEngine)
-if(NOT PrismaEngine_POPULATED)
-    FetchContent_Populate(PrismaEngine)
-endif()
-
 # ========== 添加引擎子目录 ==========
 
+message(STATUS "=== 添加 PrismaEngine 源码 ===")
+
+# 引擎源码已经在本地，直接添加子目录
+set(ENGINE_SOURCE_DIR ${PRISMA_ENGINE_ROOT}/src/engine)
+set(ENGINE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/engine)
+
+message(STATUS "Engine source: ${ENGINE_SOURCE_DIR}")
+message(STATUS "Engine binary: ${ENGINE_BINARY_DIR}")
+
 # 添加引擎作为子项目
-add_subdirectory(${PrismaEngine_SOURCE_DIR} ${PrismaEngine_BINARY_DIR})
+add_subdirectory(${ENGINE_SOURCE_DIR} ${ENGINE_BINARY_DIR})
 
 message(STATUS "PrismaEngine 已添加为子项目")
 
