@@ -96,9 +96,18 @@ RendererOpenGL::RendererOpenGL(android_app *pApp) :
         width_(0),
         height_(0),
         shaderNeedsNewProjectionMatrix_(true) {
-    init();
+    DeviceDesc deviceDesc = {};
 }
-
+RendererOpenGL::RendererOpenGL(WindowHandle *windowHandle) :
+        app_(nullptr),
+        display_(EGL_NO_DISPLAY),
+        surface_(EGL_NO_SURFACE),
+        context_(EGL_NO_CONTEXT),
+        width_(0),
+        height_(0),
+        shaderNeedsNewProjectionMatrix_(true) {
+    //Initialize();
+}
 RendererOpenGL::~RendererOpenGL() {
     if (display_ != EGL_NO_DISPLAY) {
         eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -115,7 +124,7 @@ RendererOpenGL::~RendererOpenGL() {
     }
 }
 
-void RendererOpenGL::render() {
+void RendererOpenGL::Render() {
     // Check to see if the surface has changed size. This is _necessary_ to do every frame when
     // using immersive mode as you'll get no other notification that your renderable area has
     // changed.
@@ -303,4 +312,12 @@ void RendererOpenGL::createModels() {
 
     // Create a model and put it in the back of the render list.
     models_.emplace_back(vertices, indices, spAndroidRobotTexture);
+}
+
+std::string RendererOpenGL::GetName() const {
+    return "OpenGL";
+}
+
+void RendererOpenGL::render() {
+
 }

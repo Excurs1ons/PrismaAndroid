@@ -8,16 +8,28 @@
 #include "Model.h"
 #include "ShaderOpenGL.h"
 
+
+#include "graphic/RenderAPI.h"
+#include "Platform.h"
+#include "graphic/interfaces/RenderTypes.h"
+using namespace PrismaEngine::Graphic;
 struct android_app;
 
-class RendererOpenGL : public RendererAPI {
+class RendererOpenGL :public RendererAPI// , public PrismaEngine::Graphic::IRenderDevice
+        {
 public:
     RendererOpenGL(android_app *pApp);
-    virtual ~RendererOpenGL();
+    RendererOpenGL(WindowHandle *pApp);
+    ~RendererOpenGL() override;
 
-    void init() override;
+    [[nodiscard]] std::string GetName() const;// override;
+    void init();
+    void onConfigChanged();
+    bool Initialize(const DeviceDesc& desc);// override;
+    void Render();
+
     void render() override;
-    void onConfigChanged() override;  // 空实现，OpenGL 不需要特殊处理
+
 
 private:
     void updateRenderArea();
