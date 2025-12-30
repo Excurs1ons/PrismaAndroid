@@ -1,4 +1,3 @@
-#if defined(__ANDROID__) || defined(ANDROID)
 #include <jni.h>
 
 #include "AndroidOut.h"
@@ -128,4 +127,3 @@ void android_main(struct android_app *pApp) {
     } while (!pApp->destroyRequested);
 }
 }
-#endif
