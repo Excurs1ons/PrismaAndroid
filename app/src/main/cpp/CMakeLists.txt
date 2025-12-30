@@ -69,8 +69,12 @@ include(${PRISMA_ENGINE_ROOT}/cmake/FetchContent.cmake)
 message(STATUS "=== 添加 PrismaEngine 源码 ===")
 
 # 引擎源码已经在本地，直接添加子目录
-set(ENGINE_SOURCE_DIR ${PRISMA_ENGINE_ROOT}/src/engine)
+set(ENGINE_SOURCE_DIR ${PRISMA_ENGINE_ROOT}/src)
+
+message(STATUS "添加 PrismaEngine 源码: ${PRISMA_ENGINE_ROOT}/src")
+
 set(ENGINE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/engine)
+message(STATUS "添加 PrismaEngine 库: ${CMAKE_CURRENT_BINARY_DIR}/engine")
 
 message(STATUS "Engine source: ${ENGINE_SOURCE_DIR}")
 message(STATUS "Engine binary: ${ENGINE_BINARY_DIR}")
@@ -117,9 +121,9 @@ target_link_libraries(myapplication
         game-activity::game-activity
 
         # Android 系统库
-        EGL
-        GLESv3
-        jnigraphics
+        #EGL
+        #GLESv3
+        #jnigraphics
         android
         log
         ${vulkan-lib}
