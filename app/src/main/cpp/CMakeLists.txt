@@ -149,6 +149,8 @@ target_link_libraries(myapplication
 add_library(runtime INTERFACE)
 target_include_directories(runtime INTERFACE
         ${PRISMA_ENGINE_ROOT}/src/runtime/android
+        ${PRISMA_ENGINE_ROOT}/src/runtime/android/renderer
+        ${PRISMA_ENGINE_ROOT}/src/runtime/android/renderer/API
 )
 # 链接
 target_link_libraries(myapplication
