@@ -78,29 +78,39 @@ message(STATUS "Engine binary: ${ENGINE_BINARY_DIR}")
 # 添加引擎作为子项目
 add_subdirectory(${ENGINE_SOURCE_DIR} ${ENGINE_BINARY_DIR})
 
+
 message(STATUS "PrismaEngine 已添加为子项目")
+
+# ========== 添加运行时子目录 ==========
+# 引擎源码已经在本地，直接添加子目录
+set(RUNTIME_SOURCE_DIR ${PRISMA_ENGINE_ROOT}/src/runtime/android/)
+
+message(STATUS "Runtime source: ${RUNTIME_SOURCE_DIR}")
 
 # ========== 创建应用库 ==========
 
 # 创建 myapplication.so
 add_library(myapplication SHARED
-        main.cpp
-        AndroidOut.cpp
-        Renderer.cpp
-        RendererOpenGL.cpp
-        RendererVulkan.cpp
-        ShaderOpenGL.cpp
-        ShaderVulkan.cpp
-        VulkanContext.cpp
-        TextureAsset.cpp
-        Utility.cpp
-        CubemapTextureAsset.cpp
-        SkyboxRenderer.cpp
+        # Runtime 文件（使用完整路径）
+        ${RUNTIME_SOURCE_DIR}/AndroidRuntime.cpp
+
+        # 本地 Android 特定文件
+        ${RUNTIME_SOURCE_DIR}/AndroidOut.cpp
+        ${RUNTIME_SOURCE_DIR}/Renderer.cpp
+        ${RUNTIME_SOURCE_DIR}/RendererOpenGL.cpp
+        ${RUNTIME_SOURCE_DIR}/RendererVulkan.cpp
+        ${RUNTIME_SOURCE_DIR}/ShaderOpenGL.cpp
+        ${RUNTIME_SOURCE_DIR}/ShaderVulkan.cpp
+        ${RUNTIME_SOURCE_DIR}/VulkanContext.cpp
+        ${RUNTIME_SOURCE_DIR}/TextureAsset.cpp
+        ${RUNTIME_SOURCE_DIR}/Utility.cpp
+        ${RUNTIME_SOURCE_DIR}/CubemapTextureAsset.cpp
+        ${RUNTIME_SOURCE_DIR}/SkyboxRenderer.cpp
         # 逻辑渲染层
-        renderer/RenderPipeline.cpp
-        renderer/OpaquePass.cpp
-        renderer/BackgroundPass.cpp
-        stb_impl.cpp
+        ${RUNTIME_SOURCE_DIR}/renderer/RenderPipeline.cpp
+        ${RUNTIME_SOURCE_DIR}/renderer/OpaquePass.cpp
+        ${RUNTIME_SOURCE_DIR}/renderer/BackgroundPass.cpp
+        ${RUNTIME_SOURCE_DIR}/stb_impl.cpp
 )
 
 # ========== 链接依赖 ==========
@@ -131,14 +141,19 @@ target_link_libraries(myapplication
 # ========== STB 接口库 ==========
 
 # 创建 STB 接口库
-add_library(stb_interface INTERFACE)
-target_include_directories(stb_interface INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/external/stb
-)
+#add_library(stb_interface INTERFACE)
+#target_include_directories(stb_interface INTERFACE
+#        ${CMAKE_CURRENT_SOURCE_DIR}/external/stb
+#)
 
-# 链接 STB
+add_library(runtime INTERFACE)
+target_include_directories(runtime INTERFACE
+        ${PRISMA_ENGINE_ROOT}/src/runtime/android
+)
+# 链接
 target_link_libraries(myapplication
-        stb_interface
+        # stb_interface
+        runtime
 )
 
 # ========== 链接选项 ==========
