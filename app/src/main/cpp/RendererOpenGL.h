@@ -7,9 +7,7 @@
 #include <vector>
 #include "Model.h"
 #include "ShaderOpenGL.h"
-
-
-#include "graphic/RenderAPI.h"
+//#include "graphic/RenderAPI.h"
 #include "Platform.h"
 #include "graphic/interfaces/RenderTypes.h"
 using namespace PrismaEngine::Graphic;
@@ -23,9 +21,9 @@ public:
     ~RendererOpenGL() override;
 
     [[nodiscard]] std::string GetName() const;// override;
-    void init();
-    void onConfigChanged();
-    bool Initialize(const DeviceDesc& desc);// override;
+    void init() override;
+    void onConfigChanged() override;
+    bool Initialize(const DeviceDesc& desc) ;// override;
     void Render();
 
     void render() override;

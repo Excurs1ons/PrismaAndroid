@@ -62,7 +62,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PRISMA_ENGINE_ROOT}/cmake")
 include(${PRISMA_ENGINE_ROOT}/cmake/DeviceOptions.cmake OPTIONAL)
 
 # 包含 FetchContent 依赖管理 (会自动下载所有需要的依赖)
-include(${PRISMA_ENGINE_ROOT}/cmake/FetchContent.cmake)
+include(${PRISMA_ENGINE_ROOT}/cmake/FetchThirdPartyDeps.cmake)
 
 # ========== 添加引擎子目录 ==========
 
