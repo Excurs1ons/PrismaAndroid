@@ -115,3 +115,4 @@ Thumbs.db
 *.rar
 /CLAUDE.md
 /.claude/settings.local.json
+/.idea/
