@@ -51,6 +51,32 @@ android {
     }
 }
 
+// ========== 复制引擎资源到 assets ==========
+
+// 获取引擎根目录（从 app 向上 6 级到 PrismaEngine 根目录）
+val engineRoot = file("../../..").absoluteFile
+
+// 复制 Android runtime 内置资源
+tasks.register<Copy>("copyEngineRuntimeAssets") {
+    description = "复制引擎 Android runtime 资源到 assets"
+    group = "internal"
+
+    from("$engineRoot/resources/runtime/android") {
+        include("shaders/**")
+        include("textures/**")
+    }
+    into("src/main/assets")
+    // 保持目录结构
+    eachFile {
+        relativePath = RelativePath(true, *relativePath.segments)
+    }
+}
+
+// 在预构建时执行复制
+tasks.named("preBuild") {
+    dependsOn("copyEngineRuntimeAssets")
+}
+
 dependencies {
 
     implementation(libs.appcompat)
