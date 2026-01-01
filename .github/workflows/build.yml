@@ -16,44 +16,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ============ 1. 检出 PrismaEngine 主项目 ============
-      - name: 检出 PrismaEngine 主项目
+      # ============ 1. 检出代码 ============
+      - name: 检出仓库代码
         uses: actions/checkout@v4
         with:
-          repository: Excurs1ons/PrismaEngine
-          path: PrismaEngine
-          submodules: recursive  # 检出 stb 等子模块
+          submodules: recursive  # 如果有子模块也一并检出
 
-      # ============ 2. 检出 PrismaAndroid 子模块 ============
-      - name: 检出 PrismaAndroid
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      # ============ 3. 设置目录结构 ============
-      - name: 设置目录结构
-        run: |
-          # 将 PrismaEngine 移动到正确位置
-          # CI 环境结构: /home/runner/work/PrismaEngine/PrismaEngine/projects/android/PrismaAndroid
-          # 确保 PrismaEngine 在正确的父目录下
-          mv PrismaEngine temp-prisma-engine
-          mkdir -p temp-prisma-engine/projects/android
-          mv PrismaAndroid temp-prisma-engine/projects/android/PrismaAndroid
-          mv temp-prisma-engine PrismaEngine
-
-          # 验证目录结构
-          ls -la PrismaEngine/
-          ls -la PrismaEngine/projects/android/
-          echo "PRISMA_ENGINE_ROOT=$(pwd)/PrismaEngine" >> $GITHUB_ENV
-
-      # ============ 4. 设置 JDK ============
+      # ============ 2. 设置 JDK ============
       - name: 设置 JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # ============ 5. 缓存 Gradle 依赖 ============
+      # ============ 3. 缓存 Gradle 依赖 ============
       # 缓存 Gradle 依赖包，避免每次重新下载
       - name: 缓存 Gradle 依赖
         uses: actions/cache@v4
@@ -65,7 +41,7 @@ jobs:
           restore-keys: |
             gradle-
 
-      # ============ 6. 缓存 Android NDK ============
+      # ============ 4. 缓存 Android NDK ============
       # NDK 体积很大（约 1-2GB），缓存可以显著节省时间和带宽
       - name: 缓存 Android NDK
         uses: actions/cache@v4
@@ -77,7 +53,7 @@ jobs:
           restore-keys: |
             ndk-${{ runner.os }}-
 
-      # ============ 7. 缓存 CMake 构建缓存 ============
+      # ============ 5. 缓存 CMake 构建缓存 ============
       # 缓存 CMake 的构建中间文件
       - name: 缓存 CMake 构建缓存
         uses: actions/cache@v4
@@ -89,29 +65,27 @@ jobs:
           restore-keys: |
             cmake-${{ runner.os }}-
 
-      # ============ 8. 授予执行权限 ============
+      # ============ 6. 授予执行权限 ============
       - name: 授予 Gradlew 执行权限
-        run: chmod +x PrismaEngine/projects/android/PrismaAndroid/gradlew || chmod +x ./gradlew
+        run: chmod +x ./gradlew
 
-      # ============ 9. 构建项目 ============
+      # ============ 7. 构建项目 ============
       # 使用 --build-cache 启用 Gradle 构建缓存
       # 使用 --parallel 并行构建模块
       - name: 构建 Debug APK
-        working-directory: PrismaEngine/projects/android/PrismaAndroid
         run: ./gradlew assembleDebug --build-cache --parallel --stacktrace || ./gradlew assembleDebug --stacktrace
 
-      # ============ 10. 构建 Release APK（可选）============
+      # ============ 8. 构建 Release APK（可选）============
       # 如果需要签名 Release 版本，需要配置签名密钥
       - name: 构建 Release APK
-        working-directory: PrismaEngine/projects/android/PrismaAndroid
         run: ./gradlew assembleRelease --build-cache --parallel --stacktrace || echo "Release build skipped"
 
-      # ============ 11. 上传构建产物 ============
+      # ============ 9. 上传构建产物 ============
       - name: 上传 Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: PrismaEngine/projects/android/PrismaAndroid/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 30  # 保留 30 天
 
       - name: 上传 Release APK
@@ -119,19 +93,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: PrismaEngine/projects/android/PrismaAndroid/app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/*.apk
           retention-days: 30
           if-no-files-found: ignore  # 如果没有 Release APK 也不报错
 
-      # ============ 12. 上传构建报告 ============
+      # ============ 10. 上传构建报告 ============
       - name: 上传构建日志
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
           path: |
-            PrismaEngine/projects/android/PrismaAndroid/**/build/reports/
-            PrismaEngine/projects/android/PrismaAndroid/app/build/outputs/logs/
+            **/build/reports/
+            app/build/outputs/logs/
           retention-days: 7
 
   # ============ 可选：静态分析任务 ============
@@ -140,27 +114,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检出 PrismaEngine
+      - name: 检出代码
         uses: actions/checkout@v4
-        with:
-          repository: Excurs1ons/PrismaEngine
-          path: PrismaEngine
-          submodules: recursive
-
-      - name: 检出 PrismaAndroid
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: 设置目录结构
-        run: |
-          mv PrismaEngine temp-prisma-engine
-          mkdir -p temp-prisma-engine/projects/android
-          mv PrismaAndroid temp-prisma-engine/projects/android/PrismaAndroid
-          mv temp-prisma-engine PrismaEngine
 
       - name: 设置 JDK
-        working-directory: PrismaEngine/projects/android/PrismaAndroid
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -172,13 +129,12 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('PrismaEngine/projects/android/PrismaAndroid/**/*.gradle*') }}
+          key: gradle-${{ hashFiles('**/*.gradle*') }}
 
       - name: 授予执行权限
-        run: chmod +x PrismaEngine/projects/android/PrismaAndroid/gradlew || chmod +x ./gradlew
+        run: chmod +x ./gradlew
 
       - name: 运行 Lint 检查
-        working-directory: PrismaEngine/projects/android/PrismaAndroid
         run: ./gradlew lint || echo "Lint completed with warnings"
 
       - name: 上传 Lint 报告
@@ -187,6 +143,6 @@ jobs:
         with:
           name: lint-reports
           path: |
-            PrismaEngine/projects/android/PrismaAndroid/**/build/reports/lint-*.html
-            PrismaEngine/projects/android/PrismaAndroid/**/build/reports/lint-*.xml
+            **/build/reports/lint-*.html
+            **/build/reports/lint-*.xml
           retention-days: 14

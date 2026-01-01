@@ -45,39 +45,15 @@ set(PRISMA_USE_FETCHCONTENT ON CACHE BOOL "Use FetchContent" FORCE)
 
 # ========== 包含引擎的 CMake 模块 ==========
 
-# 智能检测 PrismaEngine 根目录
-set(PRISMA_ENGINE_ROOT "")
-
-# 方法1: 检查标准子模块路径 (向上7级)
-get_filename_component(_TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../" ABSOLUTE)
-if(EXISTS "${_TEST_PATH}/src/engine" AND EXISTS "${_TEST_PATH}/cmake/DeviceOptions.cmake")
-    set(PRISMA_ENGINE_ROOT "${_TEST_PATH}")
-    message(STATUS "Found PrismaEngine at: ${PRISMA_ENGINE_ROOT} (standard submodule path)")
-endif()
-
-# 方法2: 检查 CI 环境路径 (向上5级到 work 目录)
-if(NOT PRISMA_ENGINE_ROOT)
-    get_filename_component(_TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../" ABSOLUTE)
-    if(EXISTS "${_TEST_PATH}/PrismaEngine/src/engine")
-        set(PRISMA_ENGINE_ROOT "${_TEST_PATH}/PrismaEngine")
-        message(STATUS "Found PrismaEngine at: ${PRISMA_ENGINE_ROOT} (CI path)")
-    endif()
-endif()
-
-# 方法3: 检查环境变量
-if(NOT PRISMA_ENGINE_ROOT AND DEFINED ENV{PRISMA_ENGINE_ROOT})
-    set(PRISMA_ENGINE_ROOT "$ENV{PRISMA_ENGINE_ROOT}")
-    message(STATUS "Using PrismaEngine from env: ${PRISMA_ENGINE_ROOT}")
-endif()
+# 获取 PrismaEngine 根目录
+# 从 app/src/main/cpp 向上 7 级到 PrismaEngine 根目录
+get_filename_component(PRISMA_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../" ABSOLUTE)
 
 # 打印路径用于调试
 message(STATUS "CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
 message(STATUS "PRISMA_ENGINE_ROOT: ${PRISMA_ENGINE_ROOT}")
-
-# 错误处理
-if(NOT PRISMA_ENGINE_ROOT OR NOT EXISTS "${PRISMA_ENGINE_ROOT}/src/engine")
-    message(FATAL_ERROR "PrismaEngine not found! This project must be built as part of PrismaEngine.")
-endif()
+message(STATUS "DeviceOptions.cmake exists: ${EXISTS}${PRISMA_ENGINE_ROOT}/cmake/DeviceOptions.cmake}")
+message(STATUS "FetchContent.cmake exists: ${EXISTS}${PRISMA_ENGINE_ROOT}/cmake/FetchContent.cmake}")
 
 # 包含引擎的 CMake 模块
 set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${PRISMA_ENGINE_ROOT}/cmake")
