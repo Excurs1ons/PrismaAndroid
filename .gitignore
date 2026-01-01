@@ -116,3 +116,5 @@ Thumbs.db
 /CLAUDE.md
 /.claude/settings.local.json
 /.idea/
+*/.claude/
+*/.idea/
