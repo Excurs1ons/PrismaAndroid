@@ -124,7 +124,7 @@ target_link_libraries(myapplication
         log
         ${vulkan-lib}
 
-        # 引擎库 (已经包含了所有 FetchContent 的依赖)
+        # 引擎库 (已经包含了所有 FetchContent 的依赖和 Android 适配器)
         Engine
 )
 
