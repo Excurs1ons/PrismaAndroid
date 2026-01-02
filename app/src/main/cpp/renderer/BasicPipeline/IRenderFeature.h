@@ -6,13 +6,14 @@
  * 所有额外的渲染效果都通过实现此接口来添加
  *
  * 设计原则:
- * - 核心Pass只负责基础渲染
- * - 所有扩展功能通过IRenderFeature实现
- * - Feature可以在任意渲染阶段插入自己的Pass
+ * - 核心 Pass 只负责基础渲染
+ * - 所有扩展功能通过 IRenderFeature 实现
+ * - Feature 可以在任意渲染阶段插入自己的Pass
  */
 
 #pragma once
 
+#include "RenderHandle.h"
 #include "../RenderingData.h"
 #include <string>
 #include <memory>
@@ -41,19 +42,9 @@ enum class RenderPassEvent {
 };
 
 /**
- * @brief 渲染资源句柄
- */
-struct RenderTargetHandle {
-    static constexpr uint32_t Invalid = ~0u;
-    uint32_t id = Invalid;
-
-    bool IsValid() const { return id != Invalid; }
-};
-
-/**
  * @brief 渲染上下文
  *
- * 提供Feature执行所需的接口
+ * 提供Feature执行所需的接口（类型安全版本）
  */
 class IRenderContext {
 public:
@@ -66,14 +57,43 @@ public:
     virtual void* GetAPIDevice() = 0;
 
     /** 获取/创建渲染目标 */
-    virtual void* GetCameraColor() = 0;
-    virtual void* GetCameraDepth() = 0;
-    virtual void* CreateTemporaryTexture(uint32_t width, uint32_t height, void* format, const char* name) = 0;
-    virtual void ReleaseTemporaryTexture(void* texture) = 0;
+    virtual TextureHandle GetCameraColor() = 0;
+    virtual TextureHandle GetCameraDepth() = 0;
+
+    /**
+     * @brief 创建临时纹理
+     * @return 纹理句柄
+     */
+    virtual TextureHandle CreateTemporaryTexture(const TextureDesc& desc) = 0;
+
+    /**
+     * @brief 释放临时纹理
+     */
+    virtual void ReleaseTemporaryTexture(TextureHandle handle) = 0;
+
+    /**
+     * @brief 创建临时缓冲区
+     */
+    virtual BufferHandle CreateTemporaryBuffer(const BufferDesc& desc) = 0;
+
+    /**
+     * @brief 释放临时缓冲区
+     */
+    virtual void ReleaseTemporaryBuffer(BufferHandle handle) = 0;
 
     /** 绘制辅助 */
-    virtual void DrawFullScreen(void* pipeline) = 0;
-    virtual void DrawProcedural(void* pipeline, uint32_t vertexCount) = 0;
+    virtual void DrawFullScreen(PipelineHandle pipeline) = 0;
+    virtual void DrawProcedural(PipelineHandle pipeline, uint32_t vertexCount) = 0;
+
+    /**
+     * @brief 获取渲染目标尺寸
+     */
+    virtual void GetRenderTargetSize(uint32_t& width, uint32_t& height) = 0;
+
+    /**
+     * @brief 资源管理器访问（用于转换句柄）
+     */
+    virtual IResourceManager* GetResourceManager() = 0;
 };
 
 /**
