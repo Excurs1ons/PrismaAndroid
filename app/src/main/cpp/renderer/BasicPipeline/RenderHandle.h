@@ -437,3 +437,283 @@ struct ClearValue {
         return v;
     }
 };
+
+// ============================================================================
+// 资源池类型
+// ============================================================================
+
+/**
+ * @brief 资源槽状态
+ */
+enum class SlotState : uint8_t {
+    Free,     // 空闲，可分配
+    Active,   // 使用中
+    Pending   // 待释放（延迟释放）
+};
+
+/**
+ * @brief 资源池配置
+ */
+struct PoolConfig {
+    uint32_t initialCapacity = 64;      // 初始容量
+    uint32_t maxCapacity = 4096;        // 最大容量
+    bool enableDefragmentation = false; // 启用碎片整理
+    bool enableThreadSafe = false;      // 线程安全（加锁）
+};
+
+/**
+ * @brief 资源池统计
+ */
+struct PoolStats {
+    uint32_t totalSlots = 0;
+    uint32_t activeSlots = 0;
+    uint32_t freeSlots = 0;
+    uint32_t pendingSlots = 0;
+};
+
+// ============================================================================
+// 资源池（模板）
+// ============================================================================
+
+/**
+ * @brief 资源池
+ *
+ * 功能:
+ * - 对象复用（FreeList）
+ * - 世代计数（防止悬空引用）
+ * - 延迟释放（避免频繁分配/释放）
+ * - 碎片整理
+ */
+template<typename T>
+class ResourcePool {
+public:
+    struct Slot {
+        T resource;
+        SlotState state = SlotState::Free;
+        uint32_t generation = 0;
+        uint32_t lastUsedFrame = 0;
+    };
+
+    explicit ResourcePool(const PoolConfig& config = PoolConfig());
+    virtual ~ResourcePool() = default;
+
+    // 禁止拷贝
+    ResourcePool(const ResourcePool&) = delete;
+    ResourcePool& operator=(const ResourcePool&) = delete;
+
+    /**
+     * @brief 分配资源
+     * @return (索引, Slot指针)
+     */
+    std::pair<uint32_t, Slot*> Allocate(const char* name = nullptr);
+
+    /**
+     * @brief 释放资源
+     */
+    void Release(uint32_t index);
+
+    /**
+     * @brief 获取资源
+     */
+    Slot* Get(uint32_t index, uint32_t generation);
+
+    /**
+     * @brief 检查资源是否有效
+     */
+    bool IsValid(uint32_t index, uint32_t generation) const;
+
+    /**
+     * @brief 获取使用中的资源数量
+     */
+    uint32_t GetActiveCount() const;
+
+    /**
+     * @brief 获取空闲资源数量
+     */
+    uint32_t GetFreeCount() const;
+
+    /**
+     * @brief 设置当前帧
+     */
+    void SetCurrentFrame(uint32_t frame);
+
+    /**
+     * @brief 垃圾回收
+     */
+    void GarbageCollect();
+
+    /**
+     * @brief 碎片整理
+     */
+    void Defragment();
+
+    /**
+     * @brief 获取统计信息
+     */
+    PoolStats GetStats() const;
+
+private:
+    PoolConfig config_;
+    std::vector<Slot> slots_;
+    std::deque<uint32_t> freeList_;
+    uint32_t currentFrame_ = 0;
+};
+
+// ============================================================================
+// 纹理资源
+// ============================================================================
+
+/**
+ * @brief 纹理资源
+ */
+struct TextureResource {
+    void* apiHandle = nullptr;         // API特定的纹理句柄 (VkImage等)
+    void* allocationHandle = nullptr;  // 内存分配句柄 (VmaAllocation等)
+    void* viewHandle = nullptr;        // 纹理视图句柄 (ImageView)
+    TextureDesc desc;
+};
+
+/**
+ * @brief 纹理池
+ */
+class TexturePool {
+public:
+    explicit TexturePool(const PoolConfig& config = PoolConfig());
+
+    /**
+     * @brief 创建纹理
+     * @return (句柄, API句柄)
+     */
+    std::pair<TextureHandle, void*> Create(const TextureDesc& desc);
+
+    /**
+     * @brief 销毁纹理
+     */
+    void Destroy(TextureHandle handle);
+
+    /**
+     * @brief 获取API句柄
+     */
+    void* GetAPIHandle(TextureHandle handle);
+
+    /**
+     * @brief 检查是否有效
+     */
+    bool IsValid(TextureHandle handle) const;
+
+    /**
+     * @brief 获取统计
+     */
+    PoolStats GetStats() const;
+
+private:
+    ResourcePool<TextureResource> pool_;
+};
+
+// ============================================================================
+// 缓冲资源
+// ============================================================================
+
+/**
+ * @brief 缓冲资源
+ */
+struct BufferResource {
+    void* apiHandle = nullptr;         // API缓冲句柄 (VkBuffer等)
+    void* allocationHandle = nullptr;  // 内存分配句柄
+    void* mappedPtr = nullptr;         // 映射指针（CPU可访问）
+    BufferDesc desc;
+};
+
+/**
+ * @brief 缓冲池
+ */
+class BufferPool {
+public:
+    explicit BufferPool(const PoolConfig& config = PoolConfig());
+
+    /**
+     * @brief 创建缓冲
+     * @return (句柄, API句柄)
+     */
+    std::pair<BufferHandle, void*> Create(const BufferDesc& desc);
+
+    /**
+     * @brief 销毁缓冲
+     */
+    void Destroy(BufferHandle handle);
+
+    /**
+     * @brief 获取API句柄
+     */
+    void* GetAPIHandle(BufferHandle handle);
+
+    /**
+     * @brief 映射缓冲（CPU访问）
+     */
+    void* Map(BufferHandle handle);
+
+    /**
+     * @brief 取消映射
+     */
+    void Unmap(BufferHandle handle);
+
+    /**
+     * @brief 检查是否有效
+     */
+    bool IsValid(BufferHandle handle) const;
+
+    /**
+     * @brief 获取统计
+     */
+    PoolStats GetStats() const;
+
+private:
+    ResourcePool<BufferResource> pool_;
+};
+
+// ============================================================================
+// 临时资源池
+// ============================================================================
+
+/**
+ * @brief 临时纹理池
+ *
+ * 用于帧临时资源，每帧自动回收
+ */
+class TempTexturePool {
+public:
+    static constexpr uint32_t PoolSize = 32;
+
+    TempTexturePool();
+
+    /**
+     * @brief 分配临时纹理
+     */
+    TextureHandle Allocate(const TextureDesc& desc);
+
+    /**
+     * @brief 释放临时纹理
+     */
+    void Release(TextureHandle handle);
+
+    /**
+     * @brief 每帧重置（释放所有临时纹理）
+     */
+    void Reset();
+
+    /**
+     * @brief 获取纹理句柄
+     */
+    void* Get(TextureHandle handle);
+
+private:
+    struct Entry {
+        bool inUse = false;
+        uint32_t generation = 0;
+        TextureDesc desc;
+        void* handle = nullptr;
+    };
+
+    std::array<Entry, PoolSize> entries_;
+    std::vector<uint32_t> freeList_;
+};
