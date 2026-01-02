@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 左侧面 -->
+    <path
+        android:pathData="M54,10 L20,70 L54,90 Z"
+        android:fillColor="#C9D3E0"/>
+
+    <path
+        android:pathData="M0,75 L54,54"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="0.5"/>
+
+    <!-- 右侧面 -->
+    <path
+        android:pathData="M54,10 L54,90 L88,70 Z"
+        android:fillColor="#AEB9C8"/>
+    <!-- 底面 -->
+    <path
+        android:pathData="M20,70 L54,100 L88,70 L54,80 Z"
+        android:fillColor="#8F9CAF"/>
+
+    <!-- Red -->
+    <path
+        android:pathData="M54,54 L108,30"
+        android:strokeColor="#FF5252"
+        android:strokeWidth="0.5"/>
+
+    <!-- Orange -->
+    <path
+        android:pathData="M54,54 L108,36"
+        android:strokeColor="#FFA726"
+        android:strokeWidth="0.5"/>
+
+    <!-- Yellow -->
+    <path
+        android:pathData="M54,54 L108,42"
+        android:strokeColor="#FFEB3B"
+        android:strokeWidth="0.5"/>
+
+    <!-- Green -->
+    <path
+        android:pathData="M54,54 L108,48"
+        android:strokeColor="#66BB6A"
+        android:strokeWidth="0.5"/>
+
+    <!-- Blue -->
+    <path
+        android:pathData="M54,54 L108,54"
+        android:strokeColor="#42A5F5"
+        android:strokeWidth="0.5"/>
+
+    <!-- Purple -->
+    <path
+        android:pathData="M54,54 L108,60"
+        android:strokeColor="#AB47BC"
+        android:strokeWidth="0.5"/>
+
+</vector>
