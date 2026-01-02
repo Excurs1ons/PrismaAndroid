@@ -42,6 +42,8 @@ android {
     }
     buildFeatures {
         prefab = true
+        // 启用着色器编译（将 .vert/.frag 编译为 .spv）
+        shaders = true
     }
     externalNativeBuild {
         cmake {

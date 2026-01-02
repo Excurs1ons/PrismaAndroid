@@ -102,6 +102,7 @@ add_library(myapplication SHARED
         ${RUNTIME_SOURCE_DIR}/ShaderOpenGL.cpp
         ${RUNTIME_SOURCE_DIR}/ShaderVulkan.cpp
         ${RUNTIME_SOURCE_DIR}/VulkanContext.cpp
+        ${RUNTIME_SOURCE_DIR}/LightComponent.cpp
         ${RUNTIME_SOURCE_DIR}/AndroidInputBackend.cpp
         # ${RUNTIME_SOURCE_DIR}/TextureAsset.cpp
         ${RUNTIME_SOURCE_DIR}/Utility.cpp
