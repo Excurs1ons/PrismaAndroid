@@ -1,75 +1,157 @@
 /**
  * @file Architecture.md
- * @brief 基础渲染管线架构规划
+ * @brief 基础渲染管线架构
  *
- * 参考现代渲染管线设计理念（如Unity URP、Unreal渲染架构）
- *
- * ============================================================================
- * 架构概览
- * ============================================================================
- *
- * 本实现提供可扩展的渲染管线架构：
- *
- * 1. RenderingData: 单次渲染的所有配置数据（相机、光照、阴影等）
- * 2. RenderData: 某个 Pass 所需的渲染数据
- * 3. Camera: 相机组件（视图/投影矩阵、视锥剔除）
- * 4. RenderQueue: 渲染队列（排序、剔除、批量）
- * 5. DepthState: 深度测试状态配置
- * 6. StencilState: 模板测试状态配置
- * 7. ShadowSettings: 阴影设置
- * 8. LightingData: 光照数据
- *
- * ============================================================================
- * 渲染流程
- * ============================================================================
- *
+ * 参考 Unity URP 设计，采用 核心 Pass + 可扩展 Feature 的架构
+ */
+
+#pragma once
+
+// ============================================================================
+// 架构概览
+// ============================================================================
+
+/**
+ * 设计原则:
+ * - 核心 Pass 只负责基础渲染
+ * - 所有扩展功能通过 IRenderFeature 实现
+ * - Feature 可在任意渲染阶段插入
+ */
+
+// ============================================================================
+// 渲染流程
+// ============================================================================
+
+/**
  * Frame Rendering:
- *   1. Setup
- *      - 收集场景中的所有相机、光源、渲染器
- *      - 构建 RenderingData
  *
- *   2. Per-Camera Rendering
- *      a. Camera Setup
- *         - 计算视图/投影矩阵
- *         - 视锥剔除 (Frustum Culling)
- *         - 构建渲染队列 (RenderQueue)
+ * 1. BeforeRendering Features
  *
- *      b. Shadow Pass
- *         - 渲染阴影贴图
+ * 2. ShadowPass (核心)
  *
- *      c. Opaque Pass
- *         - 深度测试开启
- *         - 从前到后排序（Early-Z优化）
- *         - 渲染不透明物体
+ * 3. BeforeRenderingShadows / AfterRenderingShadows Features
  *
- *      d. Skybox Pass
- *         - 渲染天空盒
+ * 4. BeforeRenderingOpaques Features
  *
- *      e. Transparent Pass
- *         - 深度测试开启，深度写入关闭
- *         - 从后到前排序
- *         - 渲染透明物体
+ * 5. OpaquePass (核心) - PBR不透明物体
  *
- *      f. Post-Processing Pass
- *         - 应用后处理效果
+ * 6. AfterRenderingOpaques Features (Bloom, SSAO, SSR...)
  *
- * ============================================================================
- * 目录结构
- * ============================================================================
+ * 7. SkyboxPass (核心)
  *
- * renderer/BasicPipeline/
- * ├── Architecture.md           (本文件 - 架构文档)
- * ├── RenderingData.h          (渲染数据配置)
- * ├── Camera.h                 (相机组件)
- * ├── Frustum.h                (视锥体)
- * ├── RenderQueue.h            (渲染队列)
- * ├── DepthState.h             (深度状态)
- * ├── StencilState.h           (模板状态)
- * ├── ShadowSettings.h         (阴影设置)
- * ├── LightingData.h           (光照数据)
- * └── Passes/
- *     ├── ShadowPass.h         (阴影渲染Pass)
- *     ├── OpaquePass.h         (不透明Pass)
- *     ├── TransparentPass.h    (透明Pass)
- *     └── PostProcessPass.h    (后处理Pass)
+ * 8. BeforeRenderingTransparents Features
+ *
+ * 9. TransparentPass (核心) - 透明物体
+ *
+ * 10. AfterRenderingTransparents Features
+ *
+ * 11. AfterRendering Features (PostProcess, AA...)
+ *
+ * 12. FinalBlit (核心)
+ */
+
+// ============================================================================
+// 目录结构
+// ============================================================================
+
+/**
+ * BasicPipeline/
+ * ├── Architecture.md       # 本文件
+ * ├── BasicRenderer.h       # 主渲染器
+ * ├── IRenderFeature.h      # Feature接口
+ * ├── Features.h            # Feature索引
+ * ├── Features/             # Feature实现
+ * │   ├── BloomFeature.h
+ * │   ├── PostProcessFeature.h
+ * │   ├── AntiAliasingFeature.h
+ * │   ├── ScreenSpaceFeature.h
+ * │   ├── DebugFeature.h
+ * │   ├── DepthPrepassFeature.h
+ * │   ├── UIFeature.h
+ * │   ├── ReflectionFeature.h
+ * │   └── VolumetricFeature.h
+ * ├── RenderingData.h       # 渲染数据
+ * ├── Camera.h              # 相机
+ * ├── Frustum.h             # 视锥体
+ * ├── RenderQueue.h         # 渲染队列
+ * ├── DepthState.h          # 深度状态
+ * ├── StencilState.h        # 模板状态
+ * ├── ShadowSettings.h      # 阴影设置
+ * ├── LightingData.h        # 光照数据
+ * └── Passes/               # 核心Pass（只有5个）
+ *     ├── OpaquePass.h
+ *     ├── TransparentPass.h
+ *     ├── SkyboxPass.h
+ *     └── ShadowPass.h
+ */
+
+// ============================================================================
+// 核心 Pass (只有5个)
+// ============================================================================
+
+/**
+ * 核心Pass列表:
+ *
+ * - ShadowPass       渲染阴影贴图
+ * - OpaquePass       渲染不透明物体 (PBR)
+ * - SkyboxPass       渲染天空盒
+ * - TransparentPass  渲染透明物体
+ * - FinalBlitPass    输出到屏幕
+ *
+ * 所有其他效果都通过 Feature 实现
+ */
+
+// ============================================================================
+// Feature 列表
+// ============================================================================
+
+/**
+ * 后处理类:
+ * - BloomFeature          泛光
+ * - PostProcessFeature    色调映射、颜色分级
+ * - AntiAliasingFeature   FXAA/TAA
+ *
+ * 屏幕空间类:
+ * - SSAOFeature          环境光遮蔽
+ * - SSRFeature           屏幕空间反射
+ *
+ * 调试类:
+ * - DebugFeature         调试可视化
+ *
+ * 性能优化类:
+ * - DepthPrepassFeature  深度预通过
+ *
+ * UI类:
+ * - UIFeature            UI和文本
+ *
+ * 反射类:
+ * - ReflectionProbeFeature    反射探针
+ * - PlanarReflectionFeature   平面反射
+ *
+ * 体积效果类:
+ * - VolumetricLightFeature    体积光
+ * - VolumetricFogFeature      体积雾
+ * - VolumetricCloudFeature    体积云
+ */
+
+// ============================================================================
+// 使用示例
+// ============================================================================
+
+/**
+ * @code
+ *
+ * // 创建渲染器
+ * auto renderer = std::make_unique<BasicRenderer>();
+ * renderer->Initialize(device, renderPass);
+ *
+ * // 添加Feature
+ * renderer->AddFeature(std::make_unique<BloomFeature>());
+ * renderer->AddFeature(std::make_unique<SSAOFeature>());
+ * renderer->AddFeature(std::make_unique<PostProcessFeature>());
+ *
+ * // 渲染
+ * renderer->Render(scene, camera, cmdBuffer);
+ *
+ * @endcode
  */
