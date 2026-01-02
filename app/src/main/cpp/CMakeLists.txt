@@ -95,16 +95,16 @@ add_library(myapplication SHARED
         ${RUNTIME_SOURCE_DIR}/AndroidRuntime.cpp
 
         # 本地 Android 特定文件
-        ${RUNTIME_SOURCE_DIR}/AndroidOut.cpp
+        # ${RUNTIME_SOURCE_DIR}/AndroidOut.cpp
         ${RUNTIME_SOURCE_DIR}/Renderer.cpp
         ${RUNTIME_SOURCE_DIR}/RendererOpenGL.cpp
         ${RUNTIME_SOURCE_DIR}/RendererVulkan.cpp
         ${RUNTIME_SOURCE_DIR}/ShaderOpenGL.cpp
         ${RUNTIME_SOURCE_DIR}/ShaderVulkan.cpp
         ${RUNTIME_SOURCE_DIR}/VulkanContext.cpp
-        ${RUNTIME_SOURCE_DIR}/TextureAsset.cpp
+        # ${RUNTIME_SOURCE_DIR}/TextureAsset.cpp
         ${RUNTIME_SOURCE_DIR}/Utility.cpp
-        ${RUNTIME_SOURCE_DIR}/CubemapTextureAsset.cpp
+        # ${RUNTIME_SOURCE_DIR}/CubemapTextureAsset.cpp
         ${RUNTIME_SOURCE_DIR}/SkyboxRenderer.cpp
         # 逻辑渲染层
         ${RUNTIME_SOURCE_DIR}/renderer/RenderPipeline.cpp
