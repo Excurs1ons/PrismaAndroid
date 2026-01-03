@@ -112,6 +112,7 @@ add_library(myapplication SHARED
         ${RUNTIME_SOURCE_DIR}/renderer/RenderPipeline.cpp
         ${RUNTIME_SOURCE_DIR}/renderer/OpaquePass.cpp
         ${RUNTIME_SOURCE_DIR}/renderer/BackgroundPass.cpp
+        ${RUNTIME_SOURCE_DIR}/renderer/UIPass.cpp
         ${RUNTIME_SOURCE_DIR}/stb_impl.cpp
 )
 
