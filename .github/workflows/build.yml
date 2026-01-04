@@ -97,7 +97,40 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore  # 如果没有 Release APK 也不报错
 
-      # ============ 10. 上传构建报告 ============
+      # ============ 10. 更新 latest Release（固定直链）============
+      - name: 准备 APK 文件
+        if: github.ref == 'refs/heads/main' && success()
+        run: |
+          mkdir -p latest-release
+          find app/build/outputs/apk/release -name "*.apk" -exec cp {} latest-release/PrismaAndroid.apk \;
+
+      - name: 更新 latest tag
+        if: github.ref == 'refs/heads/main' && success()
+        run: |
+          git tag -f latest
+          git push -f origin latest
+
+      - name: 更新 latest Release
+        if: github.ref == 'refs/heads/main' && success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          body: |
+            ## 最新构建版本
+
+            构建时间: ${{ github.event.head_commit.timestamp }}
+            Commit: ${{ github.event.head_commit.message }}
+
+            ### 下载
+            - **APK 直链**: [PrismaAndroid.apk](https://github.com/${{ github.repository }}/releases/download/latest/PrismaAndroid.apk)
+          files: latest-release/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ============ 11. 上传构建报告 ============
       - name: 上传构建日志
         if: failure()
         uses: actions/upload-artifact@v4
